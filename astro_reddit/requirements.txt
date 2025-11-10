@@ -1,0 +1,7 @@
+praw
+pandas
+nltk
+google-cloud-storage
+google-cloud-secret-manager
+google-auth
+requests
