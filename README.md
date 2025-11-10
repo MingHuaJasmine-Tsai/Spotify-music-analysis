@@ -1,127 +1,45 @@
-# Spotify-music-analysis
-This repository is for spotify marketing analysis project use, created bt Team 7 at class BA882
-
 Overview
+========
 
-This project — Music Trends Analytics — aims to analyze October Spotify new song releases through a unified, automated data pipeline integrating Spotify, YouTube, and Reddit data.
-We focus on understanding how social buzz and streaming performance interact, and how this insight can enhance music marketing strategies.
+Welcome to Astronomer! This project was generated after you ran 'astro dev init' using the Astronomer CLI. This readme describes the contents of the project, as well as how to run Apache Airflow on your local machine.
 
-🧩 A. Business Problems
+Project Contents
+================
 
-Our project explores how social and streaming data can inform marketing strategy in the music industry:
+Your Astro project contains the following files and folders:
 
-Cross-platform Influence
-→ How does social buzz (Reddit, YouTube) impact Spotify streaming performance?
+- dags: This folder contains the Python files for your Airflow DAGs. By default, this directory includes one example DAG:
+    - `example_astronauts`: This DAG shows a simple ETL pipeline example that queries the list of astronauts currently in space from the Open Notify API and prints a statement for each astronaut. The DAG uses the TaskFlow API to define tasks in Python, and dynamic task mapping to dynamically print a statement for each astronaut. For more on how this DAG works, see our [Getting started tutorial](https://www.astronomer.io/docs/learn/get-started-with-airflow).
+- Dockerfile: This file contains a versioned Astro Runtime Docker image that provides a differentiated Airflow experience. If you want to execute other commands or overrides at runtime, specify them here.
+- include: This folder contains any additional files that you want to include as part of your project. It is empty by default.
+- packages.txt: Install OS-level packages needed for your project by adding them to this file. It is empty by default.
+- requirements.txt: Install Python packages needed for your project by adding them to this file. It is empty by default.
+- plugins: Add custom or community plugins for your project to this file. It is empty by default.
+- airflow_settings.yaml: Use this local-only file to specify Airflow Connections, Variables, and Pools instead of entering them in the Airflow UI as you develop DAGs in this project.
 
-Trend Prediction
-→ Can Reddit discussions or YouTube engagement forecast Spotify popularity?
-→ Through text mining, how can SEO/GEO insights help music promotion?
+Deploy Your Project Locally
+===========================
 
-Campaign Optimization
-→ When is the best time to launch or promote a song for maximum impact?
+Start Airflow on your local machine by running 'astro dev start'.
 
-🎯 B. Objective
+This command will spin up five Docker containers on your machine, each for a different Airflow component:
 
-To build a unified, automated data pipeline and analytics dashboard that:
+- Postgres: Airflow's Metadata Database
+- Scheduler: The Airflow component responsible for monitoring and triggering tasks
+- DAG Processor: The Airflow component responsible for parsing DAGs
+- API Server: The Airflow component responsible for serving the Airflow UI and API
+- Triggerer: The Airflow component responsible for triggering deferred tasks
 
-Integrates data from Spotify, YouTube, and Reddit
+When all five containers are ready the command will open the browser to the Airflow UI at http://localhost:8080/. You should also be able to access your Postgres Database at 'localhost:5432/postgres' with username 'postgres' and password 'postgres'.
 
-Refreshes daily to ensure data timeliness
+Note: If you already have either of the above ports allocated, you can either [stop your existing Docker containers or change the port](https://www.astronomer.io/docs/astro/cli/troubleshoot-locally#ports-are-not-available-for-my-local-airflow-webserver).
 
-Provides actionable insights for:
+Deploy Your Project to Astronomer
+=================================
 
-Music marketing strategy
+If you have an Astronomer account, pushing code to a Deployment on Astronomer is simple. For deploying instructions, refer to Astronomer documentation: https://www.astronomer.io/docs/astro/deploy-code/
 
-Artist promotion
+Contact
+=======
 
-Trend forecasting
-
-🔗 C. Data Feeds
-Source	API	Key Data	Purpose
-🎧 Spotify Web API	Spotify Developer API
-	Popularity score, followers, audio features	Measure streaming performance
-📺 YouTube Data API	YouTube Data API
-	Views, likes, comments	Assess content engagement & virality
-💬 Reddit API	Reddit API
-	Posts & comments about artists/songs	Perform text mining, sentiment & topic analysis
-
-⚙️ All APIs are refreshed daily via automated Airflow DAGs.
-
-🧱 D. Data Pipeline Overview
-
-API Extraction → Raw data fetched from Spotify, YouTube, Reddit
-
-Airflow DAG → Orchestrates daily ETL job (scheduled in GCP Composer)
-
-Data Warehouse (BigQuery) → Cleansed & transformed data
-
-ML Layer (optional) → Sentiment scoring, trend modeling
-
-Dashboard (Streamlit) → Visual insights for music marketing decisions
-
-📁 Example directory structure:
-
-src/
- ├── api_fetch/
- ├── airflow_dags/
- ├── ml_model/
- ├── dashboard/
- ├── utils/
-data/
- ├── raw/
- ├── processed/
-
-🧮 E. Data Warehouse (GCP – BigQuery)
-
-The centralized data warehouse:
-
-Performs SQL-based transformation and aggregation
-
-Enriches tables with:
-
-Sentiment scores (using VADER)
-
-Keyword extraction
-
-Engagement metrics (views, likes, sentiment ratios)
-
-Daily insert jobs maintain consistent and up-to-date tables
-
-🧠 F. Data Model (Simplified)
-Table	Description
-spotify_tracks	Track-level metrics from Spotify
-youtube_engagement	Engagement stats per artist/video
-reddit_posts	Post- and comment-level text data
-artist_sentiment_daily	Aggregated sentiment by artist/day
-music_trends_summary	Combined performance indicators
-
-📊 G. Reporting & Visualization
-
-Developed in Streamlit (Phase 1) with integration to Looker Studio (future).
-
-Dashboard Features
-
-Audience Sentiment Over Time (by Artist)
-Track day-to-day sentiment changes to identify reaction shifts.
-
-Engagement vs Sentiment (Artist Comparison)
-Compare fan positivity vs engagement volume across artists.
-
-Daily Discussion Volume (by Artist)
-Identify peaks in attention that align with releases or viral events.
-
-Upcoming Enhancements
-
-🔍 Topic Analysis – Keyword and topic modeling for Reddit discussions
-
-📈 Engagement Correlation – Visual correlation of Reddit activity vs YouTube views
-
-☁️ H. Deployment (GCP Composer)
-
-Pipeline deployed via Google Cloud Composer (Airflow)
-
-Scheduled for daily runs
-
-Scales up to track ~15 songs concurrently
-
-Data outputs automatically refreshed to BigQuery → Streamlit Dashboard
+The Astronomer CLI is maintained with love by the Astronomer team. To report a bug or suggest a change, reach out to our support.
