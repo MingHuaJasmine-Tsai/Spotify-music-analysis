@@ -1,0 +1,10 @@
+__pycache__/
+*.py[cod]
+.DS_Store
+
+gcs_downloads/
+data/processed/
+google-cloud-sdk/
+.venv/
+*.tar.gz
+
