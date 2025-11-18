@@ -3,7 +3,7 @@ __pycache__/
 .DS_Store
 
 gcs_downloads/
-data/processed/
+# data/processed/  # Commented out to include parquet files for Streamlit deployment
 google-cloud-sdk/
 .venv/
 *.tar.gz
