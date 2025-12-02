@@ -884,23 +884,52 @@ def main() -> None:
 
     date_series = []
     if not summary_df.empty:
-        date_series.append(summary_df["snapshot_date"].dropna())
+        if "snapshot_date" in summary_df.columns:
+            date_series.append(summary_df["snapshot_date"].dropna())
     if not reddit_summary_df.empty:
-        date_series.append(reddit_summary_df["snapshot_date"].dropna())
+        if "snapshot_date" in reddit_summary_df.columns:
+            date_series.append(reddit_summary_df["snapshot_date"].dropna())
     if date_series:
         all_dates = pd.concat(date_series)
     else:
-        st.warning("No snapshot dates available in the processed datasets.")
-        return
+        st.warning("⚠️ No snapshot dates available in the processed datasets.")
+        st.info("Debug: Checking date columns...")
+        with st.expander("Debug Date Info"):
+            if not summary_df.empty:
+                st.write(f"YouTube columns: {list(summary_df.columns)}")
+                if "snapshot_date" in summary_df.columns:
+                    st.write(f"YouTube dates: {summary_df['snapshot_date'].head()}")
+            if not reddit_summary_df.empty:
+                st.write(f"Reddit columns: {list(reddit_summary_df.columns)}")
+                if "snapshot_date" in reddit_summary_df.columns:
+                    st.write(f"Reddit dates: {reddit_summary_df['snapshot_date'].head()}")
+        # Don't return - continue to show what we can
+        st.stop()
 
-    yt_channels = summary_df["channel"].dropna().unique() if not summary_df.empty else []
-    reddit_artists = (
-        reddit_summary_df["artist"].dropna().unique() if not reddit_summary_df.empty else []
-    )
+    yt_channels = []
+    if not summary_df.empty:
+        if "channel" in summary_df.columns:
+            yt_channels = summary_df["channel"].dropna().unique().tolist()
+    
+    reddit_artists = []
+    if not reddit_summary_df.empty:
+        if "artist" in reddit_summary_df.columns:
+            reddit_artists = reddit_summary_df["artist"].dropna().unique().tolist()
+    
     all_artists = sorted(set(yt_channels) | set(reddit_artists))
     if not all_artists:
-        st.warning("No artist identifiers found in the datasets.")
-        return
+        st.warning("⚠️ No artist identifiers found in the datasets.")
+        st.info("Debug: Checking artist/channel columns...")
+        with st.expander("Debug Artist Info"):
+            if not summary_df.empty:
+                st.write(f"YouTube columns: {list(summary_df.columns)}")
+                if "channel" in summary_df.columns:
+                    st.write(f"YouTube channels: {summary_df['channel'].dropna().unique()}")
+            if not reddit_summary_df.empty:
+                st.write(f"Reddit columns: {list(reddit_summary_df.columns)}")
+                if "artist" in reddit_summary_df.columns:
+                    st.write(f"Reddit artists: {reddit_summary_df['artist'].dropna().unique()}")
+        st.stop()
 
     st.sidebar.header("Filters")
     selected_artists = st.sidebar.multiselect(
