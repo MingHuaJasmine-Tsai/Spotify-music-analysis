@@ -833,7 +833,11 @@ def render_comments_view(comments_df: pd.DataFrame, selected_artist: str, max_co
 
 
 def main() -> None:
-    st.set_page_config(page_title="Multi-Platform Trend Dashboard", layout="wide")
+    try:
+        st.set_page_config(page_title="Multi-Platform Trend Dashboard", layout="wide")
+    except Exception:
+        pass  # Already set
+        
     st.title("Daily Music Trend Dashboard")
     st.caption("YouTube & Reddit data refreshed via automated pipeline.")
 
@@ -970,5 +974,11 @@ def main() -> None:
 
 
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    except Exception as e:
+        import traceback
+        st.error("❌ Application Error!")
+        st.exception(e)
+        st.code(traceback.format_exc())
 
