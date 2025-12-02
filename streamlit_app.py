@@ -838,8 +838,12 @@ def main() -> None:
     except Exception:
         pass  # Already set
         
-    st.title("Daily Music Trend Dashboard")
+    # Always show this to confirm app is running
+    st.title("🎵 Daily Music Trend Dashboard")
     st.caption("YouTube & Reddit data refreshed via automated pipeline.")
+    
+    st.markdown("---")
+    st.info("ℹ️ Application is loading...")
 
     # Debug: Show file paths
     with st.expander("🔍 Debug Info", expanded=False):
