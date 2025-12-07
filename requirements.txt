@@ -4,6 +4,8 @@ pandas>=2.0.0
 numpy>=1.24.0
 altair>=5.0.0
 pyarrow>=12.0.0
+plotly>=5.0.0
+scipy>=1.10.0
 
 # Airflow dependencies (for Astronomer deployment)
 # Astro Runtime includes the following pre-installed providers packages: https://www.astronomer.io/docs/astro/runtime-image-architecture#provider-packages
@@ -13,6 +15,11 @@ google-cloud-storage
 google-api-python-client
 google-auth
 nltk
+
+# Enhanced dashboard dependencies
+wordcloud>=1.9.0
+stylecloud>=0.5.0
+openai>=1.0.0  # For LLM summary generation (optional)
 
 
 

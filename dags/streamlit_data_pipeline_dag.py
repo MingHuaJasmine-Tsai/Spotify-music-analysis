@@ -100,15 +100,32 @@ def process_youtube_data(**context):
     print(f"   Summary: {paths.processed_summary_path}")
     print(f"   Comments: {paths.processed_comments_path}")
     
-    # Upload processed files back to GCS for Streamlit to access
-    print("\n☁️ Uploading processed files to GCS...")
+    # Upload processed files to Silver Layer (cleaned/) with date suffix
+    print("\n☁️ Uploading processed files to Silver Layer (cleaned/)...")
+    execution_date = context['ds_nodash']  # Format: YYYYMMDD
+    
     if paths.processed_summary_path.exists():
-        gcs_summary_path = f"streamlit-data/youtube_summary.parquet"
-        _upload_to_gcs(str(paths.processed_summary_path), gcs_summary_path, creds)
+        # Convert parquet to CSV for Silver Layer compatibility
+        import pandas as pd
+        df_summary = pd.read_parquet(paths.processed_summary_path)
+        csv_summary_path = paths.processed_summary_path.with_suffix('.csv')
+        df_summary.to_csv(csv_summary_path, index=False)
+        
+        # Upload to cleaned/ with date suffix
+        gcs_summary_path = f"cleaned/daily_song_summary_{execution_date}.csv"
+        _upload_to_gcs(str(csv_summary_path), gcs_summary_path, creds)
+        print(f"   ✅ Uploaded to Silver Layer: {gcs_summary_path}")
     
     if paths.processed_comments_path.exists():
-        gcs_comments_path = f"streamlit-data/youtube_comments.parquet"
-        _upload_to_gcs(str(paths.processed_comments_path), gcs_comments_path, creds)
+        # Convert parquet to CSV for Silver Layer compatibility
+        df_comments = pd.read_parquet(paths.processed_comments_path)
+        csv_comments_path = paths.processed_comments_path.with_suffix('.csv')
+        df_comments.to_csv(csv_comments_path, index=False)
+        
+        # Upload to cleaned/ with date suffix
+        gcs_comments_path = f"cleaned/all_comments_{execution_date}.csv"
+        _upload_to_gcs(str(csv_comments_path), gcs_comments_path, creds)
+        print(f"   ✅ Uploaded to Silver Layer: {gcs_comments_path}")
     
     return "YouTube data processed successfully"
 
@@ -137,15 +154,31 @@ def process_reddit_data(**context):
     print(f"   Summary: {paths.processed_summary_path}")
     print(f"   Comments: {paths.processed_comments_path}")
     
-    # Upload processed files back to GCS for Streamlit to access
-    print("\n☁️ Uploading processed files to GCS...")
+    # Upload processed files to Silver Layer (cleaned/) with date suffix
+    print("\n☁️ Uploading processed files to Silver Layer (cleaned/)...")
+    execution_date = context['ds_nodash']  # Format: YYYYMMDD
+    
     if paths.processed_summary_path.exists():
-        gcs_summary_path = f"streamlit-data/reddit_summary.parquet"
-        _upload_to_gcs(str(paths.processed_summary_path), gcs_summary_path, creds)
+        # Convert parquet to CSV for Silver Layer compatibility
+        import pandas as pd
+        df_summary = pd.read_parquet(paths.processed_summary_path)
+        csv_summary_path = paths.processed_summary_path.with_suffix('.csv')
+        df_summary.to_csv(csv_summary_path, index=False)
+        
+        # Upload to cleaned/ with date suffix (Reddit data merged into main summary)
+        # Note: Reddit data might be merged with YouTube data in Silver Layer
+        print(f"   ℹ️  Reddit summary processed (may be merged with YouTube data)")
     
     if paths.processed_comments_path.exists():
-        gcs_comments_path = f"streamlit-data/reddit_comments.parquet"
-        _upload_to_gcs(str(paths.processed_comments_path), gcs_comments_path, creds)
+        # Convert parquet to CSV for Silver Layer compatibility
+        df_comments = pd.read_parquet(paths.processed_comments_path)
+        csv_comments_path = paths.processed_comments_path.with_suffix('.csv')
+        df_comments.to_csv(csv_comments_path, index=False)
+        
+        # Upload to cleaned/ with date suffix
+        gcs_comments_path = f"cleaned/all_comments_{execution_date}.csv"
+        _upload_to_gcs(str(csv_comments_path), gcs_comments_path, creds)
+        print(f"   ✅ Uploaded to Silver Layer: {gcs_comments_path}")
     
     return "Reddit data processed successfully"
 
@@ -225,6 +258,15 @@ with DAG(
         python_callable=verify_streamlit_data,
     )
     
+    # Optional: Commit and push processed data to GitHub (to trigger Streamlit Cloud redeploy)
+    # Uncomment the following task if you want to auto-commit data files to GitHub
+    # commit_to_github = PythonOperator(
+    #     task_id="commit_data_to_github",
+    #     python_callable=commit_data_to_github,
+    # )
+    
     # Set task dependencies: process both in parallel, then verify
     [process_youtube, process_reddit] >> verify_data
+    # Uncomment if using GitHub commit task:
+    # verify_data >> commit_to_github
 
