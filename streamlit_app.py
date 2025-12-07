@@ -60,10 +60,24 @@ LOCAL_COMMENTS_PARQUET = PROCESSED_DIR / "youtube_comments.parquet"
 
 @st.cache_resource  # Use cache_resource for non-serializable objects like connections
 def _get_gcs_client():
-    """Initialize GCS client with credentials."""
+    """Initialize GCS client with credentials from Streamlit Secrets or default."""
     try:
-        client = storage.Client(project=PROJECT_ID)
-        return client
+        # Try to get credentials from Streamlit Secrets (for Streamlit Cloud)
+        if hasattr(st, 'secrets') and 'gcp_service_account' in st.secrets:
+            import json
+            from google.oauth2 import service_account
+            
+            # Get service account info from Streamlit Secrets
+            service_account_info = dict(st.secrets['gcp_service_account'])
+            credentials = service_account.Credentials.from_service_account_info(
+                service_account_info
+            )
+            client = storage.Client(project=PROJECT_ID, credentials=credentials)
+            return client
+        else:
+            # Fallback to default credentials (for local development)
+            client = storage.Client(project=PROJECT_ID)
+            return client
     except Exception as e:
         st.warning(f"⚠️ GCS client initialization failed: {e}")
         return None
