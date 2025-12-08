@@ -212,10 +212,14 @@ def load_silver_summary_from_gcs() -> pd.DataFrame:
                 content = blob.download_as_text()
                 df = pd.read_csv(io.StringIO(content))
             
-            # Standardize date column
-            if "date" in df.columns:
-                df["date"] = pd.to_datetime(df["date"], errors="coerce")
-                df = df.rename(columns={"date": "snapshot_date"})
+            # Standardize date column - handle both "date" and "snapshot_date"
+            if "date" in df.columns and "snapshot_date" not in df.columns:
+                df["snapshot_date"] = pd.to_datetime(df["date"], errors="coerce")
+            elif "snapshot_date" in df.columns:
+                df["snapshot_date"] = pd.to_datetime(df["snapshot_date"], errors="coerce")
+            elif "date" not in df.columns and "snapshot_date" not in df.columns:
+                # If no date column, try to infer from filename or use today
+                df["snapshot_date"] = pd.to_datetime("today")
             
             # Check if we have multiple dates
             if "snapshot_date" in df.columns and df["snapshot_date"].nunique() > 1:
@@ -252,6 +256,10 @@ def load_silver_summary_from_gcs() -> pd.DataFrame:
         # Add reddit_comment_count if missing
         if "reddit_comment_count" not in df.columns:
             df["reddit_comment_count"] = 0
+        
+        # Remove duplicates - keep latest entry for same artist/song/date
+        if "snapshot_date" in df.columns and "artist" in df.columns and "song" in df.columns:
+            df = df.drop_duplicates(subset=["snapshot_date", "artist", "song"], keep="last")
         
         return df.sort_values(["snapshot_date", "artist", "song"]).reset_index(drop=True)
     
@@ -297,19 +305,29 @@ def load_raw_summary_data(bucket) -> pd.DataFrame:
                     else:
                         df["artist"] = "Unknown"
                 
-                # Normalize artist names to handle variations
+                # Normalize artist names to handle variations - be careful not to over-merge
                 if "artist" in df.columns:
-                    # Common name variations
-                    df["artist"] = df["artist"].str.replace("VEVO", "", case=False, regex=False)
-                    df["artist"] = df["artist"].str.replace("Music", "", case=False, regex=False)
-                    df["artist"] = df["artist"].str.strip()
-                    # Specific normalizations
-                    df["artist"] = df["artist"].replace({
+                    # Store original for reference
+                    df["artist_original"] = df["artist"].copy()
+                    
+                    # Only normalize specific known cases to avoid over-merging
+                    specific_replacements = {
                         "DemiLovatoVEVO": "Demi Lovato",
                         "MadisonBeerMusicVEVO": "Madison Beer",
                         "tameimpalaVEVO": "Tame Impala",
                         "TylaVEVO": "Tyla"
-                    })
+                    }
+                    df["artist"] = df["artist"].replace(specific_replacements)
+                    
+                    # For other cases, only remove trailing VEVO/Music if it's clearly a suffix
+                    # Use regex to be more precise - only remove if it's at the end
+                    df["artist"] = df["artist"].str.replace(r"VEVO$", "", case=False, regex=True)
+                    df["artist"] = df["artist"].str.replace(r"Music$", "", case=False, regex=True)
+                    df["artist"] = df["artist"].str.strip()
+                    
+                    # Drop the temporary column
+                    if "artist_original" in df.columns:
+                        df = df.drop(columns=["artist_original"])
                 
                 # Song/Title
                 if "song" not in df.columns:
@@ -371,6 +389,11 @@ def load_raw_summary_data(bucket) -> pd.DataFrame:
             processed_dfs.append(df[standard_cols])
         
         combined_df = pd.concat(processed_dfs, ignore_index=True)
+        
+        # Remove duplicates - keep latest entry for same artist/song/date
+        if "snapshot_date" in combined_df.columns and "artist" in combined_df.columns and "song" in combined_df.columns:
+            combined_df = combined_df.drop_duplicates(subset=["snapshot_date", "artist", "song"], keep="last")
+        
         return combined_df
     
     except Exception as e:
@@ -500,6 +523,26 @@ def calculate_z_scores(series: pd.Series) -> pd.Series:
     return (series - series.mean()) / series.std()
 
 
+def format_number(num: float) -> str:
+    """Format large numbers with K/M suffixes."""
+    if abs(num) >= 1_000_000_000:
+        return f"{num/1_000_000_000:.2f}B"
+    elif abs(num) >= 1_000_000:
+        return f"{num/1_000_000:.2f}M"
+    elif abs(num) >= 1_000:
+        return f"{num/1_000:.2f}K"
+    else:
+        return f"{num:.0f}"
+
+
+def get_artist_colors(artists: list) -> dict:
+    """Generate distinct colors for each artist."""
+    import plotly.colors as pc
+    # Use a color palette that works well in dark mode
+    colors = pc.qualitative.Set3 + pc.qualitative.Pastel + pc.qualitative.Dark2
+    return {artist: colors[i % len(colors)] for i, artist in enumerate(artists)}
+
+
 def calculate_cross_correlation(y1: pd.Series, y2: pd.Series, max_lag: int = 5) -> pd.DataFrame:
     """Calculate cross-correlation function for two time series."""
     lags = range(-max_lag, max_lag + 1)
@@ -611,12 +654,15 @@ def render_daily_snapshot(filtered_df: pd.DataFrame, summary_df: pd.DataFrame) -
         with col1:
             st.markdown("**Top Artists by Views**")
             top_views = filtered_df.nlargest(10, "youtube_views")[["artist", "youtube_views"]]
+            artist_colors = get_artist_colors(top_views["artist"].tolist())
             fig = go.Figure(data=[
                 go.Bar(
                     x=top_views["youtube_views"],
                     y=top_views["artist"],
                     orientation='h',
-                    marker_color="#1DB954"
+                    marker_color=[artist_colors.get(artist, "#1DB954") for artist in top_views["artist"]],
+                    text=[format_number(v) for v in top_views["youtube_views"]],
+                    textposition="outside"
                 )
             ])
             fig.update_layout(
@@ -624,19 +670,24 @@ def render_daily_snapshot(filtered_df: pd.DataFrame, summary_df: pd.DataFrame) -
                 xaxis_title="Views",
                 yaxis_title="Artist",
                 height=400,
-                template="plotly_dark"
+                template="plotly_dark",
+                xaxis=dict(tickformat=".0f", tickmode="linear")
             )
+            fig.update_xaxes(tickformat=".0s")  # Use scientific notation for large numbers
             st.plotly_chart(fig, use_container_width=True)
         
         with col2:
             st.markdown("**Top Artists by Likes**")
             top_likes = filtered_df.nlargest(10, "youtube_likes")[["artist", "youtube_likes"]]
+            artist_colors = get_artist_colors(top_likes["artist"].tolist())
             fig = go.Figure(data=[
                 go.Bar(
                     x=top_likes["youtube_likes"],
                     y=top_likes["artist"],
                     orientation='h',
-                    marker_color="#1DB954"
+                    marker_color=[artist_colors.get(artist, "#1DB954") for artist in top_likes["artist"]],
+                    text=[format_number(v) for v in top_likes["youtube_likes"]],
+                    textposition="outside"
                 )
             ])
             fig.update_layout(
@@ -646,17 +697,21 @@ def render_daily_snapshot(filtered_df: pd.DataFrame, summary_df: pd.DataFrame) -
                 height=400,
                 template="plotly_dark"
             )
+            fig.update_xaxes(tickformat=".0s")
             st.plotly_chart(fig, use_container_width=True)
         
         with col3:
             st.markdown("**Top Artists by Sentiment**")
             top_sentiment = filtered_df.nlargest(10, "youtube_pos_ratio")[["artist", "youtube_pos_ratio"]]
+            artist_colors = get_artist_colors(top_sentiment["artist"].tolist())
             fig = go.Figure(data=[
                 go.Bar(
                     x=top_sentiment["youtube_pos_ratio"],
                     y=top_sentiment["artist"],
                     orientation='h',
-                    marker_color="#1DB954"
+                    marker_color=[artist_colors.get(artist, "#1DB954") for artist in top_sentiment["artist"]],
+                    text=[f"{v:.2%}" for v in top_sentiment["youtube_pos_ratio"]],
+                    textposition="outside"
                 )
             ])
             fig.update_layout(
@@ -666,6 +721,7 @@ def render_daily_snapshot(filtered_df: pd.DataFrame, summary_df: pd.DataFrame) -
                 height=400,
                 template="plotly_dark"
             )
+            fig.update_xaxes(tickformat=".0%")
             st.plotly_chart(fig, use_container_width=True)
         
         # Scatter plots
@@ -674,6 +730,7 @@ def render_daily_snapshot(filtered_df: pd.DataFrame, summary_df: pd.DataFrame) -
         col1, col2 = st.columns(2)
         
         with col1:
+            # Use better color scale for dark mode
             fig = go.Figure(data=[
                 go.Scatter(
                     x=filtered_df["youtube_views"],
@@ -682,11 +739,12 @@ def render_daily_snapshot(filtered_df: pd.DataFrame, summary_df: pd.DataFrame) -
                     text=filtered_df["artist"],
                     textposition="top center",
                     marker=dict(
-                        size=10,
+                        size=12,
                         color=filtered_df["youtube_pos_ratio"],
-                        colorscale="Viridis",
+                        colorscale="Plasma",  # Better for dark mode than Viridis
                         showscale=True,
-                        colorbar=dict(title="Sentiment")
+                        colorbar=dict(title="Sentiment", tickformat=".0%"),
+                        line=dict(width=1, color="white")
                     )
                 )
             ])
@@ -697,9 +755,13 @@ def render_daily_snapshot(filtered_df: pd.DataFrame, summary_df: pd.DataFrame) -
                 height=400,
                 template="plotly_dark"
             )
+            fig.update_xaxes(tickformat=".0s")
+            fig.update_yaxes(tickformat=".0s")
             st.plotly_chart(fig, use_container_width=True)
         
         with col2:
+            # Use artist colors for better distinction
+            artist_colors = get_artist_colors(filtered_df["artist"].unique().tolist())
             fig = go.Figure(data=[
                 go.Scatter(
                     x=filtered_df["youtube_views"],
@@ -707,7 +769,11 @@ def render_daily_snapshot(filtered_df: pd.DataFrame, summary_df: pd.DataFrame) -
                     mode='markers+text',
                     text=filtered_df["artist"],
                     textposition="top center",
-                    marker=dict(size=10, color="#1DB954")
+                    marker=dict(
+                        size=12,
+                        color=[artist_colors.get(artist, "#1DB954") for artist in filtered_df["artist"]],
+                        line=dict(width=1, color="white")
+                    )
                 )
             ])
             fig.update_layout(
@@ -717,6 +783,8 @@ def render_daily_snapshot(filtered_df: pd.DataFrame, summary_df: pd.DataFrame) -
                 height=400,
                 template="plotly_dark"
             )
+            fig.update_xaxes(tickformat=".0s")
+            fig.update_yaxes(tickformat=".0%")
             st.plotly_chart(fig, use_container_width=True)
         
         # Data table
@@ -917,13 +985,13 @@ def render_youtube_trends(filtered_df: pd.DataFrame, summary_df: pd.DataFrame) -
         secondary_y=True,
     )
     
-    fig.update_xaxes(
-        title_text="Date",
-        type='date',
-        tickformat='%Y-%m-%d'
-    )
-    fig.update_yaxes(title_text="YouTube Views", secondary_y=False)
-    fig.update_yaxes(title_text="YouTube Likes", secondary_y=True)
+            fig.update_xaxes(
+                title_text="Date",
+                type='date',
+                tickformat='%Y-%m-%d'
+            )
+            fig.update_yaxes(title_text="YouTube Views", secondary_y=False, tickformat=".0s")
+            fig.update_yaxes(title_text="YouTube Likes", secondary_y=True, tickformat=".0s")
     fig.update_layout(
         title="YouTube Engagement Trends",
         hovermode="x unified",
@@ -2448,9 +2516,9 @@ def main() -> None:
     # Sidebar filters
     st.sidebar.header("🎛️ Filters")
     
-    # Artist filter
+    # Artist filter - show all artists by default
     artists = sorted(summary_df["artist"].dropna().unique().tolist())
-    selected_artists = st.sidebar.multiselect("Artists", artists, default=artists[:3] if len(artists) >= 3 else artists)
+    selected_artists = st.sidebar.multiselect("Artists", artists, default=artists)
     
     # Date filter
     if "snapshot_date" in summary_df.columns:
