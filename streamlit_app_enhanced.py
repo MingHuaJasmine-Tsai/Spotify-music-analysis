@@ -675,9 +675,11 @@ def render_daily_snapshot(filtered_df: pd.DataFrame, summary_df: pd.DataFrame) -
                 yaxis_title="Artist",
                 height=400,
                 template="plotly_dark",
+                margin=dict(l=150, r=50, t=50, b=50),  # Increase left margin for artist names
                 xaxis=dict(tickformat=".0f", tickmode="linear")
             )
             fig.update_xaxes(tickformat=".0s")  # Use scientific notation for large numbers
+            fig.update_yaxes(tickangle=0)  # Ensure artist names are horizontal
             st.plotly_chart(fig, use_container_width=True)
         
         with col2:
@@ -703,9 +705,11 @@ def render_daily_snapshot(filtered_df: pd.DataFrame, summary_df: pd.DataFrame) -
                 xaxis_title="Likes",
                 yaxis_title="Artist",
                 height=400,
-                template="plotly_dark"
+                template="plotly_dark",
+                margin=dict(l=150, r=50, t=50, b=50)  # Increase left margin for artist names
             )
             fig.update_xaxes(tickformat=".0s")
+            fig.update_yaxes(tickangle=0)  # Ensure artist names are horizontal
             st.plotly_chart(fig, use_container_width=True)
         
         with col3:
@@ -744,9 +748,11 @@ def render_daily_snapshot(filtered_df: pd.DataFrame, summary_df: pd.DataFrame) -
                 xaxis_title="Positive Ratio",
                 yaxis_title="Artist",
                 height=400,
-                template="plotly_dark"
+                template="plotly_dark",
+                margin=dict(l=150, r=50, t=50, b=50)  # Increase left margin for artist names
             )
             fig.update_xaxes(tickformat=".0%")
+            fig.update_yaxes(tickangle=0)  # Ensure artist names are horizontal
             st.plotly_chart(fig, use_container_width=True)
         
         # Scatter plots - Top 10 artists only
@@ -877,9 +883,11 @@ def render_daily_snapshot(filtered_df: pd.DataFrame, summary_df: pd.DataFrame) -
                     xaxis_title="Views",
                     yaxis_title="Artist",
                     height=300,
-                    template="plotly_dark"
+                    template="plotly_dark",
+                    margin=dict(l=150, r=50, t=50, b=50)  # Increase left margin for artist names
                 )
                 fig.update_xaxes(tickformat=".0s")
+                fig.update_yaxes(tickangle=0)  # Ensure artist names are horizontal
                 st.plotly_chart(fig, use_container_width=True)
             
             with col2:
@@ -905,9 +913,11 @@ def render_daily_snapshot(filtered_df: pd.DataFrame, summary_df: pd.DataFrame) -
                     xaxis_title="Likes",
                     yaxis_title="Artist",
                     height=300,
-                    template="plotly_dark"
+                    template="plotly_dark",
+                    margin=dict(l=150, r=50, t=50, b=50)  # Increase left margin for artist names
                 )
                 fig.update_xaxes(tickformat=".0s")
+                fig.update_yaxes(tickangle=0)  # Ensure artist names are horizontal
                 st.plotly_chart(fig, use_container_width=True)
             
             with col3:
@@ -953,9 +963,11 @@ def render_daily_snapshot(filtered_df: pd.DataFrame, summary_df: pd.DataFrame) -
                         yaxis_title="Artist",
                         height=300,
                         template="plotly_dark",
+                        margin=dict(l=150, r=50, t=50, b=50),  # Increase left margin for artist names
                         xaxis=dict(range=[0, max_val])
                     )
                     fig.update_xaxes(tickformat=".0%")
+                    fig.update_yaxes(tickangle=0)  # Ensure artist names are horizontal
                     st.plotly_chart(fig, use_container_width=True)
                 else:
                     # Show all artists even if values are 0
@@ -976,9 +988,11 @@ def render_daily_snapshot(filtered_df: pd.DataFrame, summary_df: pd.DataFrame) -
                             yaxis_title="Artist",
                             height=300,
                             template="plotly_dark",
+                            margin=dict(l=150, r=50, t=50, b=50),  # Increase left margin for artist names
                             xaxis=dict(range=[0, 1])
                         )
                         fig.update_xaxes(tickformat=".0%")
+                        fig.update_yaxes(tickangle=0)  # Ensure artist names are horizontal
                         st.plotly_chart(fig, use_container_width=True)
                     else:
                         st.info("No sentiment data available for this day")
