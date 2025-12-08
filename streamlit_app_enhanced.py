@@ -960,29 +960,28 @@ def render_daily_snapshot(filtered_df: pd.DataFrame, summary_df: pd.DataFrame) -
                 else:
                     # Show all artists even if values are 0
                     if len(top_sentiment) > 0:
-                            fig = go.Figure(data=[
-                                go.Bar(
-                                    x=top_sentiment["youtube_pos_ratio"],
-                                    y=top_sentiment["artist"],
-                                    orientation='h',
-                                    marker_color=[artist_colors.get(artist, "#888888") for artist in top_sentiment["artist"]],
-                                    text=[f"{v:.2%}" for v in top_sentiment["youtube_pos_ratio"]],
-                                    textposition="outside"
-                                )
-                            ])
-                            fig.update_layout(
-                                title="Top 10 by Sentiment (All values are 0)",
-                                xaxis_title="Positive Ratio",
-                                yaxis_title="Artist",
-                                height=300,
-                                template="plotly_dark",
-                                xaxis=dict(range=[0, 1])
+                        fig = go.Figure(data=[
+                            go.Bar(
+                                x=top_sentiment["youtube_pos_ratio"],
+                                y=top_sentiment["artist"],
+                                orientation='h',
+                                marker_color=[artist_colors.get(artist, "#888888") for artist in top_sentiment["artist"]],
+                                text=[f"{v:.2%}" for v in top_sentiment["youtube_pos_ratio"]],
+                                textposition="outside"
                             )
-                            st.plotly_chart(fig, use_container_width=True)
-                        else:
-                            st.info("No sentiment data available for this day")
-                else:
-                    st.info("Sentiment column not found in data")
+                        ])
+                        fig.update_layout(
+                            title="Top 10 by Sentiment (All values are 0)",
+                            xaxis_title="Positive Ratio",
+                            yaxis_title="Artist",
+                            height=300,
+                            template="plotly_dark",
+                            xaxis=dict(range=[0, 1])
+                        )
+                        fig.update_xaxes(tickformat=".0%")
+                        st.plotly_chart(fig, use_container_width=True)
+                    else:
+                        st.info("No sentiment data available for this day")
             
             # Data table for latest day
             st.subheader(f"📋 Latest Day Data ({latest_date.date()})")
