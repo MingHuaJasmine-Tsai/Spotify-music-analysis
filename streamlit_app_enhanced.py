@@ -985,13 +985,13 @@ def render_youtube_trends(filtered_df: pd.DataFrame, summary_df: pd.DataFrame) -
         secondary_y=True,
     )
     
-            fig.update_xaxes(
-                title_text="Date",
-                type='date',
-                tickformat='%Y-%m-%d'
-            )
-            fig.update_yaxes(title_text="YouTube Views", secondary_y=False, tickformat=".0s")
-            fig.update_yaxes(title_text="YouTube Likes", secondary_y=True, tickformat=".0s")
+    fig.update_xaxes(
+        title_text="Date",
+        type='date',
+        tickformat='%Y-%m-%d'
+    )
+    fig.update_yaxes(title_text="YouTube Views", secondary_y=False, tickformat=".0s")
+    fig.update_yaxes(title_text="YouTube Likes", secondary_y=True, tickformat=".0s")
     fig.update_layout(
         title="YouTube Engagement Trends",
         hovermode="x unified",
