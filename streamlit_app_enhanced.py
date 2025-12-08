@@ -1910,10 +1910,20 @@ def build_text_for_hf(df: pd.DataFrame, max_rows: int = 80) -> str:
     
     text = "\n".join(lines)
     
-    # Keep within a safe length for the HF model
-    MAX_CHARS = 3500
+    # BART-large-CNN has a max input length of 1024 tokens
+    # To be safe, limit to ~800 characters (roughly 200 tokens)
+    MAX_CHARS = 800
     if len(text) > MAX_CHARS:
-        text = text[:MAX_CHARS]
+        # Truncate intelligently at sentence boundaries if possible
+        truncated = text[:MAX_CHARS]
+        # Try to cut at the last sentence boundary
+        last_period = truncated.rfind('.')
+        last_newline = truncated.rfind('\n')
+        cut_point = max(last_period, last_newline)
+        if cut_point > MAX_CHARS * 0.7:  # Only use if we keep at least 70% of text
+            text = truncated[:cut_point + 1]
+        else:
+            text = truncated
     
     return text
 
@@ -1923,79 +1933,95 @@ def hf_summarize(text: str) -> str:
     Call Hugging Face Inference API for summarization.
     Uses facebook/bart-large-cnn model.
     Tries standard endpoint first, falls back to router if needed.
+    If input is too long (400 error), automatically truncates and retries.
     """
     hf_token = get_hf_token()
     if not hf_token:
         raise RuntimeError("HF_TOKEN not available. Please set it in Streamlit Secrets or environment variable.")
     
     headers = {"Authorization": f"Bearer {hf_token}"}
-    payload = {
-        "inputs": text,
-        "parameters": {
-            "max_length": 200,
-            "min_length": 60,
-            "do_sample": False,
-        },
-        "options": {
-            "wait_for_model": True
-        },
-    }
     
-    # Try multiple endpoints with correct formats
+    # Try multiple endpoints with correct formats (only router is currently working)
     api_urls = [
-        f"https://api-inference.huggingface.co/models/{HF_MODEL}",
         f"https://router.huggingface.co/hf-inference/models/{HF_MODEL}",
-        f"https://api-inference.huggingface.co/pipeline/summarization/{HF_MODEL}",
     ]
     
-    last_error = None
-    errors = []
-    for api_url in api_urls:
-        try:
-            response = requests.post(api_url, headers=headers, json=payload, timeout=120)
-            
-            if response.status_code == 401:
-                errors.append(f"Endpoint {api_url}: Authentication failed (401)")
-                continue
-            elif response.status_code == 403:
-                errors.append(f"Endpoint {api_url}: Access forbidden (403)")
-                continue
-            elif response.status_code == 404:
-                # Try next endpoint if 404
-                errors.append(f"Endpoint {api_url}: Not found (404)")
-                continue
-            elif response.status_code == 410:
-                # Try next endpoint if deprecated
-                errors.append(f"Endpoint {api_url}: Deprecated (410)")
-                continue
-            elif response.status_code != 200:
-                error_text = response.text[:500] if len(response.text) > 500 else response.text
-                errors.append(f"Endpoint {api_url}: Error ({response.status_code}): {error_text}")
-                continue
-            
-            data = response.json()
-            
-            # Expected response: [{"summary_text": "..."}]
-            if isinstance(data, list) and len(data) > 0 and "summary_text" in data[0]:
-                return data[0]["summary_text"]
-            
-            # Also handle direct dict response format
-            if isinstance(data, dict) and "summary_text" in data:
-                return data["summary_text"]
-            
-            last_error = f"Unexpected response format from Hugging Face API: {json.dumps(data, indent=2)[:500]}"
-            continue
-            
-        except requests.exceptions.Timeout:
-            last_error = "Hugging Face API request timed out. The model may be loading. Please try again in a moment."
-            continue
-        except requests.exceptions.RequestException as e:
-            last_error = f"Failed to connect to Hugging Face API: {e}"
-            continue
+    # If text is too long, try progressively shorter versions
+    text_versions = [text]
+    if len(text) > 800:
+        # Try 600 chars
+        text_versions.append(text[:600])
+    if len(text) > 500:
+        # Try 400 chars
+        text_versions.append(text[:400])
     
-    # If all endpoints failed, raise a comprehensive error
+    errors = []
+    for text_input in text_versions:
+        payload = {
+            "inputs": text_input,
+            "parameters": {
+                "max_length": 150,  # Reduced from 200
+                "min_length": 50,   # Reduced from 60
+                "do_sample": False,
+            },
+            "options": {
+                "wait_for_model": True
+            },
+        }
+        
+        for api_url in api_urls:
+            try:
+                response = requests.post(api_url, headers=headers, json=payload, timeout=120)
+                
+                if response.status_code == 401:
+                    errors.append(f"Endpoint {api_url}: Authentication failed (401)")
+                    continue
+                elif response.status_code == 403:
+                    errors.append(f"Endpoint {api_url}: Access forbidden (403)")
+                    continue
+                elif response.status_code == 404:
+                    errors.append(f"Endpoint {api_url}: Not found (404)")
+                    continue
+                elif response.status_code == 410:
+                    errors.append(f"Endpoint {api_url}: Deprecated (410)")
+                    continue
+                elif response.status_code == 400:
+                    # Input too long or format issue - try shorter text
+                    error_text = response.text[:200] if len(response.text) > 200 else response.text
+                    if "index out of range" in error_text.lower() or len(text_input) > 400:
+                        # Will try shorter version in next iteration
+                        continue
+                    else:
+                        errors.append(f"Endpoint {api_url}: Bad request (400): {error_text}")
+                        continue
+                elif response.status_code != 200:
+                    error_text = response.text[:500] if len(response.text) > 500 else response.text
+                    errors.append(f"Endpoint {api_url}: Error ({response.status_code}): {error_text}")
+                    continue
+            
+                data = response.json()
+                
+                # Expected response: [{"summary_text": "..."}]
+                if isinstance(data, list) and len(data) > 0 and "summary_text" in data[0]:
+                    return data[0]["summary_text"]
+                
+                # Also handle direct dict response format
+                if isinstance(data, dict) and "summary_text" in data:
+                    return data["summary_text"]
+                
+                errors.append(f"Endpoint {api_url}: Unexpected response format: {json.dumps(data, indent=2)[:500]}")
+                continue
+                
+            except requests.exceptions.Timeout:
+                errors.append(f"Endpoint {api_url}: Request timed out")
+                continue
+            except requests.exceptions.RequestException as e:
+                errors.append(f"Endpoint {api_url}: Connection error: {e}")
+                continue
+    
+    # If all endpoints and text versions failed, raise a comprehensive error
     if errors:
-        error_msg = "All Hugging Face API endpoints failed:\n" + "\n".join(f"  - {e}" for e in errors)
+        error_msg = "All Hugging Face API attempts failed:\n" + "\n".join(f"  - {e}" for e in errors[:5])  # Show first 5 errors
         raise RuntimeError(error_msg)
     else:
         raise RuntimeError("All Hugging Face API endpoints failed.")
