@@ -2232,8 +2232,16 @@ def render_llm_summary(comments_df: pd.DataFrame, filtered_df: pd.DataFrame, sum
                     del st.session_state[k]
                 st.rerun()
     
-    # Generate summary - only when button is clicked or cache doesn't exist for this data
-    if generate_btn or cache_key not in st.session_state:
+    # Generate summary - ALWAYS generate when button is clicked, ignore cache
+    if generate_btn:
+        # Clear any existing cache for this key
+        if cache_key in st.session_state:
+            del st.session_state[cache_key]
+        if f"{cache_key}_timestamp" in st.session_state:
+            del st.session_state[f"{cache_key}_timestamp"]
+        if f"{cache_key}_api" in st.session_state:
+            del st.session_state[f"{cache_key}_api"]
+        
         # Generate new summary with timeout handling
         try:
             with st.spinner(f"Generating summary using {api_choice}... This may take up to 2 minutes."):
@@ -2241,6 +2249,8 @@ def render_llm_summary(comments_df: pd.DataFrame, filtered_df: pd.DataFrame, sum
                 st.session_state[cache_key] = summary_text
                 st.session_state[f"{cache_key}_timestamp"] = datetime.now().isoformat()
                 st.session_state[f"{cache_key}_api"] = api_choice
+                # Force rerun to show new content
+                st.rerun()
         except Exception as e:
             st.error(f"❌ Summary generation failed: {str(e)}")
             st.info("💡 Please try again or switch to a different API.")
@@ -2264,47 +2274,59 @@ def render_llm_summary(comments_df: pd.DataFrame, filtered_df: pd.DataFrame, sum
         }).reset_index().sort_values("snapshot_date")
         
         if len(all_daily) > 1:
-            # Calculate views growth
-            # Note: YouTube views are cumulative per video, so we need to track the same videos
-            # If different videos are tracked each day, the sum might be similar
-            first_views = float(all_daily["youtube_views"].iloc[0])
-            last_views = float(all_daily["youtube_views"].iloc[-1])
+            # Calculate views growth - track same songs across dates
+            # Group by artist and song to track individual song growth
+            song_tracking = summary_df.groupby(["artist", "song", "snapshot_date"]).agg({
+                "youtube_views": "first"  # Get first value if duplicates
+            }).reset_index()
             
-            # Calculate growth
-            if first_views > 0:
-                views_growth = ((last_views - first_views) / first_views) * 100
-            else:
-                views_growth = 0.0
+            # Find songs that appear in both first and last date
+            first_date = all_daily["snapshot_date"].iloc[0]
+            last_date = all_daily["snapshot_date"].iloc[-1]
             
-            # Alternative: Calculate average daily views growth
-            # This might be more meaningful if we're tracking different videos each day
-            avg_first = first_views / len(summary_df[summary_df["snapshot_date"] == all_daily["snapshot_date"].iloc[0]])
-            avg_last = last_views / len(summary_df[summary_df["snapshot_date"] == all_daily["snapshot_date"].iloc[-1]])
+            first_songs = song_tracking[song_tracking["snapshot_date"] == first_date].set_index(["artist", "song"])
+            last_songs = song_tracking[song_tracking["snapshot_date"] == last_date].set_index(["artist", "song"])
             
-            # Show metric with debug info
-            with st.expander("🔍 Growth Calculation Details", expanded=False):
-                st.write(f"**First date ({all_daily['snapshot_date'].iloc[0].date()}):** {first_views:,.0f} total views")
-                st.write(f"**Last date ({all_daily['snapshot_date'].iloc[-1].date()}):** {last_views:,.0f} total views")
-                st.write(f"**Difference:** {last_views - first_views:,.0f} views")
-                st.write(f"**Number of days:** {len(all_daily)}")
-                st.write(f"**Average views per entry (first day):** {avg_first:,.0f}")
-                st.write(f"**Average views per entry (last day):** {avg_last:,.0f}")
+            # Find common songs
+            common_songs = first_songs.index.intersection(last_songs.index)
             
-            # Show growth metric
-            if abs(views_growth) < 0.01:
-                # If growth is essentially 0, show a different metric
+            if len(common_songs) > 0:
+                # Calculate growth for songs that exist in both dates
+                first_views_common = first_songs.loc[common_songs, "youtube_views"].sum()
+                last_views_common = last_songs.loc[common_songs, "youtube_views"].sum()
+                
+                if first_views_common > 0:
+                    views_growth = ((last_views_common - first_views_common) / first_views_common) * 100
+                else:
+                    views_growth = 0.0
+                
                 st.metric(
-                    "Total Views (Period)",
-                    f"{last_views:,.0f}",
-                    delta=f"From {all_daily['snapshot_date'].iloc[0].date()} to {all_daily['snapshot_date'].iloc[-1].date()}"
-                )
-                st.caption("ℹ️ Views appear to be cumulative snapshots. Growth calculation may not be meaningful for this data structure.")
-            else:
-                st.metric(
-                    "Views Growth",
+                    "Views Growth (Same Songs)",
                     f"{views_growth:+.1f}%",
-                    delta=f"From {all_daily['snapshot_date'].iloc[0].date()} to {all_daily['snapshot_date'].iloc[-1].date()}"
+                    delta=f"Tracking {len(common_songs)} songs from {first_date.date()} to {last_date.date()}"
                 )
+                
+                with st.expander("🔍 Growth Calculation Details", expanded=False):
+                    st.write(f"**Songs tracked:** {len(common_songs)}")
+                    st.write(f"**First date ({first_date.date()}):** {first_views_common:,.0f} views")
+                    st.write(f"**Last date ({last_date.date()}):** {last_views_common:,.0f} views")
+                    st.write(f"**Growth:** {last_views_common - first_views_common:,.0f} views ({views_growth:+.1f}%)")
+            else:
+                # No common songs, show total views comparison
+                first_views = float(all_daily["youtube_views"].iloc[0])
+                last_views = float(all_daily["youtube_views"].iloc[-1])
+                
+                st.metric(
+                    "Total Views",
+                    f"{last_views:,.0f}",
+                    delta=f"From {first_date.date()} to {last_date.date()}"
+                )
+                st.info("ℹ️ Different songs tracked each day. Showing total views instead of growth percentage.")
+                
+                with st.expander("🔍 Growth Calculation Details", expanded=False):
+                    st.write(f"**First date ({first_date.date()}):** {first_views:,.0f} total views")
+                    st.write(f"**Last date ({last_date.date()}):** {last_views:,.0f} total views")
+                    st.write(f"**Note:** No common songs found between dates, so growth % cannot be calculated.")
         elif len(all_daily) == 1:
             st.info("ℹ️ Only one day of data available. Growth calculation requires multiple days.")
         
