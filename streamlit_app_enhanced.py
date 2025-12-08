@@ -2203,11 +2203,22 @@ def render_llm_summary(comments_df: pd.DataFrame, filtered_df: pd.DataFrame, sum
         use_hf = (api_choice == "Hugging Face" and is_hf_available())
     
     # Create a unique cache key based on data content and filters
+    # Include more data characteristics to ensure cache invalidation when data changes
     import hashlib
-    data_hash = hashlib.md5(
-        f"{len(analysis_comments)}_{len(filtered_df)}_{api_choice}_{filtered_df['youtube_views'].sum() if not filtered_df.empty else 0}".encode()
-    ).hexdigest()[:8]
-    cache_key = f"summary_{data_hash}_{api_choice}"
+    import json
+    
+    # Create hash from multiple data characteristics
+    data_signature = {
+        "comments_count": len(analysis_comments),
+        "filtered_rows": len(filtered_df),
+        "total_views": float(filtered_df['youtube_views'].sum()) if not filtered_df.empty and 'youtube_views' in filtered_df.columns else 0,
+        "total_likes": float(filtered_df['youtube_likes'].sum()) if not filtered_df.empty and 'youtube_likes' in filtered_df.columns else 0,
+        "date_range": f"{filtered_df['snapshot_date'].min()}_{filtered_df['snapshot_date'].max()}" if not filtered_df.empty and 'snapshot_date' in filtered_df.columns else "none",
+        "api_choice": api_choice
+    }
+    
+    data_hash = hashlib.md5(json.dumps(data_signature, sort_keys=True).encode()).hexdigest()[:12]
+    cache_key = f"llm_summary_{data_hash}"
     
     col_btn1, col_btn2 = st.columns([1, 4])
     with col_btn1:
