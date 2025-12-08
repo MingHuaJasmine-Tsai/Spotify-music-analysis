@@ -13,6 +13,7 @@ from __future__ import annotations
 import io
 import os
 import re
+import json
 from collections import Counter
 from datetime import datetime, date
 from pathlib import Path
@@ -28,6 +29,7 @@ import streamlit as st
 from google.cloud import storage
 from scipy import stats
 from scipy.stats import pearsonr
+import requests
 
 # Optional imports for advanced features
 try:
@@ -41,6 +43,25 @@ try:
     OPENAI_AVAILABLE = True
 except ImportError:
     OPENAI_AVAILABLE = False
+
+# Hugging Face settings
+HF_MODEL = "facebook/bart-large-cnn"
+HF_API_URL = f"https://api-inference.huggingface.co/models/{HF_MODEL}"
+
+def get_hf_token():
+    """Get Hugging Face token from environment or Streamlit secrets."""
+    try:
+        if hasattr(st, 'secrets') and 'hf_token' in st.secrets:
+            return st.secrets['hf_token']
+        elif os.getenv("HF_TOKEN"):
+            return os.getenv("HF_TOKEN")
+    except:
+        pass
+    return None
+
+def is_hf_available():
+    """Check if Hugging Face is available."""
+    return get_hf_token() is not None
 
 # ===== GCS CONFIGURATION =====
 PROJECT_ID = "ba882-qstba-group7-fall2025"
@@ -1547,11 +1568,143 @@ def render_comments_analysis(comments_df: pd.DataFrame, topic_df: pd.DataFrame, 
     )
 
 
-def generate_llm_summary(comments_df: pd.DataFrame, summary_df: pd.DataFrame) -> str:
-    """Generate LLM summary of comments and trends."""
-    if OPENAI_AVAILABLE:
+def build_text_for_hf(df: pd.DataFrame, max_rows: int = 80) -> str:
+    """
+    Build a text block from sampled comment rows for Hugging Face summarization.
+    """
+    if len(df) == 0:
+        return "No data."
+    
+    # Find comment column
+    comment_col = None
+    for col in ["comment", "body", "text", "content"]:
+        if col in df.columns:
+            comment_col = col
+            break
+    
+    if comment_col is None:
+        return "No comment data found."
+    
+    sample = df.sample(min(max_rows, len(df)), random_state=42)
+    
+    lines = []
+    for _, row in sample.iterrows():
+        comment = row.get(comment_col, "")
+        if isinstance(comment, str) and comment.strip():
+            lines.append(comment.strip())
+    
+    if not lines:
+        return "No data."
+    
+    text = "\n".join(lines)
+    
+    # Keep within a safe length for the HF model
+    MAX_CHARS = 3500
+    if len(text) > MAX_CHARS:
+        text = text[:MAX_CHARS]
+    
+    return text
+
+
+def hf_summarize(text: str) -> str:
+    """
+    Call Hugging Face Inference API for summarization.
+    Uses facebook/bart-large-cnn model.
+    """
+    hf_token = get_hf_token()
+    if not hf_token:
+        raise RuntimeError("HF_TOKEN not available. Please set it in Streamlit Secrets or environment variable.")
+    
+    headers = {"Authorization": f"Bearer {hf_token}"}
+    payload = {
+        "inputs": text,
+        "parameters": {
+            "max_length": 200,
+            "min_length": 60,
+            "do_sample": False,
+        },
+        "options": {
+            "wait_for_model": True
+        },
+    }
+    
+    try:
+        response = requests.post(HF_API_URL, headers=headers, json=payload, timeout=120)
+        
+        if response.status_code != 200:
+            raise RuntimeError(f"Hugging Face API error: {response.status_code} - {response.text}")
+        
+        data = response.json()
+        
+        # Expected response: [{"summary_text": "..."}]
+        if isinstance(data, list) and len(data) > 0 and "summary_text" in data[0]:
+            return data[0]["summary_text"]
+        
+        raise RuntimeError(f"Unexpected response format from Hugging Face API: {json.dumps(data, indent=2)}")
+    except requests.exceptions.RequestException as e:
+        raise RuntimeError(f"Failed to connect to Hugging Face API: {e}")
+
+
+def summary_to_bullets(summary: str, max_bullets: int = 5) -> str:
+    """
+    Convert the summary into 3–5 bullet points about sentiment & key themes.
+    """
+    sentences = re.split(r"[.!?]\s+", summary)
+    sentences = [s.strip() for s in sentences if s.strip()]
+    
+    if not sentences:
+        return "- No summary generated."
+    
+    n = min(max_bullets, max(3, len(sentences)))
+    chosen = sentences[:n]
+    
+    bullets = "\n".join(f"- {s}" for s in chosen)
+    return bullets
+
+
+def generate_llm_summary(comments_df: pd.DataFrame, summary_df: pd.DataFrame, use_hf: bool = True) -> str:
+    """Generate LLM summary of comments and trends using Hugging Face or OpenAI."""
+    # Try Hugging Face first if requested and available
+    if use_hf and is_hf_available():
         try:
-            client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+            # Build text from comments
+            text = build_text_for_hf(comments_df, max_rows=80)
+            if text.strip() == "No data.":
+                return "No usable comment data found for summarization."
+            
+            # Call Hugging Face API
+            raw_summary = hf_summarize(text)
+            
+            # Convert to bullet points
+            bullets = summary_to_bullets(raw_summary, max_bullets=5)
+            
+            # Add context about trends
+            if not summary_df.empty:
+                context = f"""
+## Overall Sentiment & Key Themes (Hugging Face BART)
+
+{bullets}
+
+### Additional Context:
+- Total Comments Analyzed: {len(comments_df):,}
+- Total YouTube Views: {summary_df['youtube_views'].sum():,.0f}
+- Average Positive Sentiment: {summary_df['youtube_pos_ratio'].mean():.1%}
+"""
+                return context
+            else:
+                return f"## Overall Sentiment & Key Themes (Hugging Face BART)\n\n{bullets}"
+        except Exception as e:
+            st.warning(f"⚠️ Hugging Face summarization failed: {e}")
+            # Fall through to OpenAI or fallback
+    
+    # Try OpenAI if available and HF not used or failed
+    if OPENAI_AVAILABLE and not use_hf:
+        try:
+            api_key = os.getenv("OPENAI_API_KEY") or (st.secrets.get("openai_api_key") if hasattr(st, 'secrets') else None)
+            if not api_key:
+                raise ValueError("OpenAI API key not found")
+            
+            client = OpenAI(api_key=api_key)
             
             # Prepare summary text
             summary_text = f"""
@@ -1581,38 +1734,38 @@ def generate_llm_summary(comments_df: pd.DataFrame, summary_df: pd.DataFrame) ->
             return response.choices[0].message.content
         except Exception as e:
             return f"LLM summary generation failed: {e}. Please check OpenAI API key."
-    else:
-        # Fallback: Generate simple summary
-        if summary_df.empty:
-            return "No data available for summary generation."
-        
-        summary = f"""
-        ## Music Trend Summary
-        
-        **Overall Performance:**
-        - Total YouTube Views: {summary_df['youtube_views'].sum():,.0f}
-        - Total YouTube Likes: {summary_df['youtube_likes'].sum():,.0f}
-        - Average Positive Sentiment: {summary_df['youtube_pos_ratio'].mean():.1%}
-        - Total Reddit Comments: {summary_df['reddit_comment_count'].sum():,.0f}
-        
-        **Top Performing Artists:**
-        """
-        
-        top_artists = summary_df.groupby('artist').agg({
-            'youtube_views': 'sum',
-            'youtube_likes': 'sum',
-            'youtube_pos_ratio': 'mean'
-        }).sort_values('youtube_views', ascending=False).head(5)
-        
-        for artist, row in top_artists.iterrows():
-            summary += f"\n- **{artist}**: {row['youtube_views']:,.0f} views, {row['youtube_likes']:,.0f} likes, {row['youtube_pos_ratio']:.1%} positive"
-        
-        if not comments_df.empty and 'comment' in comments_df.columns:
-            summary += f"\n\n**Comments Analysis:**\n"
-            summary += f"- Total Comments: {len(comments_df)}\n"
-            summary += f"- Sample themes: Emotional reactions, song appreciation, personal connections"
-        
-        return summary
+    
+    # Fallback: Generate simple summary
+    if summary_df.empty:
+        return "No data available for summary generation."
+    
+    summary = f"""
+## Music Trend Summary
+
+**Overall Performance:**
+- Total YouTube Views: {summary_df['youtube_views'].sum():,.0f}
+- Total YouTube Likes: {summary_df['youtube_likes'].sum():,.0f}
+- Average Positive Sentiment: {summary_df['youtube_pos_ratio'].mean():.1%}
+- Total Reddit Comments: {summary_df['reddit_comment_count'].sum():,.0f}
+
+**Top Performing Artists:**
+"""
+    
+    top_artists = summary_df.groupby('artist').agg({
+        'youtube_views': 'sum',
+        'youtube_likes': 'sum',
+        'youtube_pos_ratio': 'mean'
+    }).sort_values('youtube_views', ascending=False).head(5)
+    
+    for artist, row in top_artists.iterrows():
+        summary += f"\n- **{artist}**: {row['youtube_views']:,.0f} views, {row['youtube_likes']:,.0f} likes, {row['youtube_pos_ratio']:.1%} positive"
+    
+    if not comments_df.empty and 'comment' in comments_df.columns:
+        summary += f"\n\n**Comments Analysis:**\n"
+        summary += f"- Total Comments: {len(comments_df)}\n"
+        summary += f"- Sample themes: Emotional reactions, song appreciation, personal connections"
+    
+    return summary
 
 
 def render_llm_summary(comments_df: pd.DataFrame, topic_df: pd.DataFrame, filtered_df: pd.DataFrame) -> None:
@@ -1626,19 +1779,43 @@ def render_llm_summary(comments_df: pd.DataFrame, topic_df: pd.DataFrame, filter
     # Use topic_df if available for comments
     analysis_comments = topic_df if not topic_df.empty else comments_df
     
-    col1, col2 = st.columns([3, 1])
+    # API selection
+    col1, col2, col3 = st.columns([2, 1, 1])
     
     with col1:
         st.subheader("📊 Automated Insights")
     
     with col2:
-        generate_btn = st.button("🔄 Generate Summary", type="primary")
+        # Show API status
+        hf_available = is_hf_available()
+        if hf_available:
+            st.success("✅ Hugging Face Available")
+        else:
+            st.warning("⚠️ Hugging Face: Set HF_TOKEN in Secrets")
+        
+        if OPENAI_AVAILABLE:
+            st.success("✅ OpenAI Available")
+        else:
+            st.info("ℹ️ OpenAI: Optional")
+    
+    with col3:
+        # API selection
+        api_choice = st.radio(
+            "Choose API:",
+            ["Hugging Face", "OpenAI"],
+            index=0 if is_hf_available() else 1,
+            horizontal=True
+        )
+        use_hf = (api_choice == "Hugging Face" and is_hf_available())
+    
+    generate_btn = st.button("🔄 Generate Summary", type="primary")
     
     # Generate summary
     if generate_btn or "summary_text" not in st.session_state:
-        with st.spinner("Generating summary..."):
-            summary_text = generate_llm_summary(analysis_comments, filtered_df)
+        with st.spinner(f"Generating summary using {api_choice}..."):
+            summary_text = generate_llm_summary(analysis_comments, filtered_df, use_hf=use_hf)
             st.session_state["summary_text"] = summary_text
+            st.session_state["api_used"] = api_choice
     
     if "summary_text" in st.session_state:
         st.markdown(st.session_state["summary_text"])
