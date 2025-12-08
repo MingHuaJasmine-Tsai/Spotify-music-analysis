@@ -2038,40 +2038,96 @@ def generate_llm_summary(comments_df: pd.DataFrame, summary_df: pd.DataFrame, us
     # Try OpenAI if available and (HF not used or HF failed)
     if OPENAI_AVAILABLE and (not use_hf or (use_hf and not is_hf_available())):
         try:
-            api_key = os.getenv("OPENAI_API_KEY") or (st.secrets.get("openai_api_key") if hasattr(st, 'secrets') else None)
+            # Try multiple ways to get API key
+            api_key = None
+            if hasattr(st, 'secrets'):
+                # Try section format first
+                try:
+                    if hasattr(st.secrets, 'tokens') and hasattr(st.secrets.tokens, 'openai_api_key'):
+                        api_key = st.secrets.tokens.openai_api_key
+                except:
+                    pass
+                # Try top-level key
+                if not api_key:
+                    try:
+                        api_key = st.secrets.get("openai_api_key") if hasattr(st.secrets, 'get') else None
+                    except:
+                        pass
+                # Try direct attribute
+                if not api_key:
+                    try:
+                        api_key = st.secrets.openai_api_key
+                    except:
+                        pass
+            
+            # Fallback to environment variable
             if not api_key:
-                raise ValueError("OpenAI API key not found")
+                api_key = os.getenv("OPENAI_API_KEY")
+            
+            if not api_key:
+                raise ValueError("OpenAI API key not found. Please set it in Streamlit Secrets or environment variable.")
             
             client = OpenAI(api_key=api_key)
             
-            # Prepare summary text
-            summary_text = f"""
-            Music Trend Summary:
-            - Total YouTube Views: {summary_df['youtube_views'].sum():,.0f}
-            - Total YouTube Likes: {summary_df['youtube_likes'].sum():,.0f}
-            - Average Sentiment: {summary_df['youtube_pos_ratio'].mean():.1%}
-            - Total Comments Analyzed: {len(comments_df)}
+            # Build text from comments (similar to HF approach)
+            comment_text = build_text_for_hf(comments_df, max_rows=100)  # Use more rows for OpenAI
             
-            Top Artists:
-            {summary_df.groupby('artist')['youtube_views'].sum().sort_values(ascending=False).head(5).to_string()}
-            
-            Sample Comments:
-            {comments_df['comment'].head(10).tolist() if 'comment' in comments_df.columns else 'N/A'}
-            """
+            # Prepare comprehensive summary text
+            summary_data = f"""
+Music Trend Analytics Data:
+
+Performance Metrics:
+- Total YouTube Views: {summary_df['youtube_views'].sum():,.0f}
+- Total YouTube Likes: {summary_df['youtube_likes'].sum():,.0f}
+- Average Positive Sentiment: {summary_df['youtube_pos_ratio'].mean():.1%}
+- Total Reddit Comments: {summary_df['reddit_comment_count'].sum():,.0f}
+- Total Comments Analyzed: {len(comments_df):,}
+
+Top 5 Artists by Views:
+{summary_df.groupby('artist')['youtube_views'].sum().sort_values(ascending=False).head(5).to_string()}
+
+Sample User Comments ({len(comments_df)} total):
+{comment_text[:2000]}  # Limit to 2000 chars for OpenAI
+"""
             
             response = client.chat.completions.create(
                 model="gpt-3.5-turbo",
                 messages=[
-                    {"role": "system", "content": "You are a music analytics expert. Provide concise insights about music trends."},
-                    {"role": "user", "content": f"Analyze this music trend data and provide key insights:\n\n{summary_text}"}
+                    {
+                        "role": "system", 
+                        "content": "You are a music analytics expert. Analyze music trend data and user comments to provide concise, insightful summaries. Focus on key themes, sentiment patterns, and notable trends."
+                    },
+                    {
+                        "role": "user", 
+                        "content": f"Analyze this music trend data and provide a summary with 3-5 key insights:\n\n{summary_data}"
+                    }
                 ],
-                max_tokens=500,
+                max_tokens=600,
                 temperature=0.7
             )
             
-            return response.choices[0].message.content
+            raw_summary = response.choices[0].message.content
+            
+            # Format similar to HF output
+            if not summary_df.empty:
+                context = f"""
+## Overall Sentiment & Key Themes (OpenAI GPT-3.5)
+
+{raw_summary}
+
+### Additional Context:
+- Total Comments Analyzed: {len(comments_df):,}
+- Total YouTube Views: {summary_df['youtube_views'].sum():,.0f}
+- Average Positive Sentiment: {summary_df['youtube_pos_ratio'].mean():.1%}
+"""
+                return context
+            else:
+                return f"## Overall Sentiment & Key Themes (OpenAI GPT-3.5)\n\n{raw_summary}"
+                
+        except ValueError as e:
+            return f"❌ {str(e)}\n\nPlease configure OpenAI API key in Streamlit Secrets:\n- Add `openai_api_key` to your secrets (either in `[tokens]` section or top-level)"
         except Exception as e:
-            return f"LLM summary generation failed: {e}. Please check OpenAI API key."
+            return f"❌ OpenAI summary generation failed: {str(e)}\n\nPlease check your OpenAI API key and try again."
     
     # Fallback: Generate simple summary
     if summary_df.empty:
