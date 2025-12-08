@@ -2021,12 +2021,14 @@ def generate_llm_summary(comments_df: pd.DataFrame, summary_df: pd.DataFrame, us
                 return f"## Overall Sentiment & Key Themes (Hugging Face BART)\n\n{bullets}"
         except Exception as e:
             error_msg = str(e)
-            # Show detailed error
-            st.error(f"❌ Hugging Face summarization failed: {error_msg}")
-            # If it's an API error, show more details
-            if "API error" in error_msg or "status_code" in error_msg:
-                st.info("💡 This might be a token permission issue. Please check your Hugging Face token has 'Read' access.")
-            # Fall through to OpenAI or fallback
+            # Don't show error here - let the caller handle it
+            # Return error message instead of raising
+            if "timeout" in error_msg.lower() or "timed out" in error_msg.lower():
+                return f"❌ Summary generation timed out. The API may be slow. Please try again or use OpenAI instead.\n\nError: {error_msg}"
+            elif "API error" in error_msg or "status_code" in error_msg:
+                return f"❌ Hugging Face API error. Please check your token has 'Read' access.\n\nError: {error_msg}"
+            else:
+                return f"❌ Hugging Face summarization failed: {error_msg}\n\nPlease try again or switch to OpenAI."
     
     # Try OpenAI if available and HF not used or failed
     if OPENAI_AVAILABLE and not use_hf:
@@ -2196,16 +2198,45 @@ def render_llm_summary(comments_df: pd.DataFrame, filtered_df: pd.DataFrame) -> 
         )
         use_hf = (api_choice == "Hugging Face" and is_hf_available())
     
-    generate_btn = st.button("🔄 Generate Summary", type="primary")
+    col_btn1, col_btn2 = st.columns([1, 4])
+    with col_btn1:
+        generate_btn = st.button("🔄 Generate Summary", type="primary", use_container_width=True)
+    with col_btn2:
+        if "summary_text" in st.session_state:
+            if st.button("🗑️ Clear Cache", use_container_width=True):
+                # Clear cached summary
+                if "summary_text" in st.session_state:
+                    del st.session_state["summary_text"]
+                if "api_used" in st.session_state:
+                    del st.session_state["api_used"]
+                st.rerun()
     
-    # Generate summary
-    if generate_btn or "summary_text" not in st.session_state:
-        with st.spinner(f"Generating summary using {api_choice}..."):
-            summary_text = generate_llm_summary(analysis_comments, filtered_df, use_hf=use_hf)
-            st.session_state["summary_text"] = summary_text
-            st.session_state["api_used"] = api_choice
+    # Generate summary - only when button is clicked or no cached summary exists
+    if generate_btn:
+        # Clear old summary when generating new one
+        if "summary_text" in st.session_state:
+            del st.session_state["summary_text"]
+        if "api_used" in st.session_state:
+            del st.session_state["api_used"]
+        
+        # Generate new summary with timeout handling
+        try:
+            with st.spinner(f"Generating summary using {api_choice}... This may take up to 2 minutes."):
+                summary_text = generate_llm_summary(analysis_comments, filtered_df, use_hf=use_hf)
+                st.session_state["summary_text"] = summary_text
+                st.session_state["api_used"] = api_choice
+                st.session_state["summary_timestamp"] = datetime.now().isoformat()
+        except Exception as e:
+            st.error(f"❌ Summary generation failed: {str(e)}")
+            st.info("💡 Please try again or switch to a different API.")
+            if "summary_text" in st.session_state:
+                del st.session_state["summary_text"]
     
+    # Display cached summary if available
     if "summary_text" in st.session_state:
+        if "api_used" in st.session_state:
+            st.caption(f"Generated using {st.session_state['api_used']}" + 
+                      (f" at {st.session_state.get('summary_timestamp', '')}" if "summary_timestamp" in st.session_state else ""))
         st.markdown(st.session_state["summary_text"])
     
     # Additional insights
