@@ -1566,22 +1566,33 @@ def render_ccf_analysis(filtered_df: pd.DataFrame, summary_df: pd.DataFrame) -> 
 
 
 def clean_text_for_wordcloud(text: str) -> str:
-    """Clean text for word cloud generation with better preprocessing."""
+    """Clean text for word cloud generation with improved, more precise preprocessing."""
     if pd.isna(text):
         return ""
     
     text = str(text)
     
     # Remove URLs
-    text = re.sub(r'http\S+|www.\S+', '', text)
+    text = re.sub(r'http\S+|www\.\S+|https?://\S+', '', text)
     # Remove mentions and hashtags
     text = re.sub(r'@\w+|#\w+', '', text)
-    # Remove emojis (keep text only)
+    # Remove email addresses
+    text = re.sub(r'\S+@\S+', '', text)
+    # Remove numbers (standalone)
+    text = re.sub(r'\b\d+\b', '', text)
+    # Remove special characters but keep apostrophes for contractions
     text = re.sub(r'[^\w\s\']', ' ', text)
     # Remove extra whitespace
     text = re.sub(r'\s+', ' ', text)
     
-    return text.lower().strip()
+    # Convert to lowercase and strip
+    text = text.lower().strip()
+    
+    # Remove very short words (1-2 characters) that are likely noise
+    words = text.split()
+    words = [w for w in words if len(w) > 2]
+    
+    return " ".join(words)
 
 
 def generate_wordcloud(text_data: list[str], title: str, colormap: str = "viridis") -> Optional[bytes]:
@@ -1592,21 +1603,34 @@ def generate_wordcloud(text_data: list[str], title: str, colormap: str = "viridi
     if not text_data:
         return None
     
-    # Common stopwords to exclude
+    # Expanded stopwords to exclude - more comprehensive list for better precision
     stopwords_set = {
-        'the', 'a', 'an', 'and', 'or', 'but', 'in', 'on', 'at', 'to', 'for', 'of', 'with', 'by',
-        'this', 'that', 'these', 'those', 'is', 'are', 'was', 'were', 'be', 'been', 'being',
-        'have', 'has', 'had', 'do', 'does', 'did', 'will', 'would', 'could', 'should',
-        'i', 'you', 'he', 'she', 'it', 'we', 'they', 'me', 'him', 'her', 'us', 'them',
-        'my', 'your', 'his', 'her', 'its', 'our', 'their', 'what', 'which', 'who', 'whom',
-        'get', 'got', 'go', 'went', 'come', 'came', 'see', 'saw', 'know', 'knew',
-        'think', 'thought', 'say', 'said', 'tell', 'told', 'make', 'made', 'take', 'took',
-        'can', 'cant', 'cannot', 'dont', 'wont', 'wouldnt', 'couldnt', 'shouldnt',
-        'im', 'youre', 'hes', 'shes', 'its', 'were', 'theyre', 'ive', 'youve', 'weve', 'theyve',
-        'just', 'like', 'really', 'very', 'much', 'more', 'most', 'some', 'any', 'all', 'every',
-        'one', 'two', 'first', 'second', 'new', 'old', 'good', 'bad', 'great', 'small', 'big',
-        'time', 'times', 'day', 'days', 'way', 'ways', 'thing', 'things', 'people', 'person',
-        'also', 'still', 'even', 'only', 'now', 'then', 'here', 'there', 'where', 'when', 'why', 'how'
+        # Basic articles and prepositions
+        'the', 'a', 'an', 'and', 'or', 'but', 'in', 'on', 'at', 'to', 'for', 'of', 'with', 'by', 'from', 'up', 'about', 'into', 'through', 'during', 'including', 'against', 'among', 'throughout', 'despite', 'towards', 'upon', 'concerning', 'to', 'of', 'in', 'for', 'on', 'with', 'at', 'by', 'from', 'up', 'about', 'into', 'through', 'during', 'including', 'against', 'among', 'throughout', 'despite', 'towards', 'upon', 'concerning',
+        # Pronouns
+        'i', 'you', 'he', 'she', 'it', 'we', 'they', 'me', 'him', 'her', 'us', 'them', 'this', 'that', 'these', 'those', 'myself', 'yourself', 'himself', 'herself', 'itself', 'ourselves', 'yourselves', 'themselves',
+        # Possessive pronouns
+        'my', 'your', 'his', 'her', 'its', 'our', 'their', 'mine', 'yours', 'hers', 'ours', 'theirs',
+        # Question words
+        'what', 'which', 'who', 'whom', 'whose', 'where', 'when', 'why', 'how',
+        # Common verbs
+        'is', 'are', 'was', 'were', 'be', 'been', 'being', 'have', 'has', 'had', 'having', 'do', 'does', 'did', 'doing', 'will', 'would', 'could', 'should', 'may', 'might', 'must', 'can', 'cant', 'cannot',
+        # Action verbs
+        'get', 'got', 'getting', 'go', 'goes', 'went', 'going', 'gone', 'come', 'comes', 'came', 'coming', 'see', 'sees', 'saw', 'seeing', 'seen', 'know', 'knows', 'knew', 'knowing', 'known',
+        'think', 'thinks', 'thought', 'thinking', 'say', 'says', 'said', 'saying', 'tell', 'tells', 'told', 'telling', 'make', 'makes', 'made', 'making', 'take', 'takes', 'took', 'taking', 'taken',
+        # Contractions
+        'im', 'youre', 'hes', 'shes', 'its', 'were', 'theyre', 'ive', 'youve', 'weve', 'theyve', 'id', 'youd', 'hed', 'shed', 'wed', 'theyd', 'isnt', 'arent', 'wasnt', 'werent', 'hasnt', 'havent', 'hadnt', 'dont', 'doesnt', 'didnt', 'wont', 'wouldnt', 'couldnt', 'shouldnt',
+        # Adverbs and modifiers
+        'just', 'really', 'very', 'much', 'more', 'most', 'some', 'any', 'all', 'every', 'each', 'both', 'few', 'many', 'several', 'such', 'only', 'also', 'still', 'even', 'too', 'so', 'quite', 'rather', 'pretty', 'fairly', 'almost', 'enough', 'quite',
+        # Time words
+        'now', 'then', 'here', 'there', 'today', 'yesterday', 'tomorrow', 'soon', 'later', 'early', 'late', 'always', 'never', 'often', 'sometimes', 'usually', 'recently', 'already', 'yet', 'still',
+        # Common nouns (generic)
+        'one', 'two', 'first', 'second', 'third', 'last', 'next', 'new', 'old', 'good', 'bad', 'great', 'small', 'big', 'large', 'little', 'long', 'short', 'high', 'low', 'right', 'left', 'best', 'worst',
+        'time', 'times', 'day', 'days', 'way', 'ways', 'thing', 'things', 'people', 'person', 'man', 'men', 'woman', 'women', 'guy', 'guys', 'girl', 'girls', 'boy', 'boys',
+        # Common filler words
+        'like', 'um', 'uh', 'er', 'ah', 'oh', 'well', 'yeah', 'yes', 'no', 'ok', 'okay', 'hmm', 'huh',
+        # Music/comment specific common words that don't add value
+        'video', 'videos', 'watch', 'watching', 'watched', 'click', 'clicks', 'link', 'links', 'channel', 'channels', 'subscribe', 'subscribed', 'subscriber', 'subscribers', 'comment', 'comments', 'commented', 'reply', 'replies', 'replied'
     }
     
     # Clean and combine all text
@@ -1662,47 +1686,17 @@ def generate_wordcloud(text_data: list[str], title: str, colormap: str = "viridi
         return None
 
 
-def render_comments_analysis(comments_df: pd.DataFrame, topic_df: pd.DataFrame, filtered_df: pd.DataFrame) -> None:
+def render_comments_analysis(comments_df: pd.DataFrame, filtered_df: pd.DataFrame) -> None:
     """
-    Render comments analysis with word clouds and topic modeling.
-    Uses Golden Layer topic model data from GCP (generated by Ran's ML pipeline).
+    Render comments analysis with word clouds and recent comments.
     """
-    st.header("🤖 Machine Learning: Topic Modeling Analysis")
+    st.header("💬 Comments Analysis")
     
-    # ✅ MUST use Golden Layer topic model data - no fallback allowed
-    if topic_df.empty:
-        st.error("""
-        ❌ **Topic model data not available**
-        
-        The Golden Layer topic modeling has not been run yet, or the data file is missing.
-        
-        **Required file**: `gs://apidatabase/cleaned/all_comments_topic_model_YYYYMMDD.csv`
-        
-        Please ensure:
-        1. Golden Layer topic modeling DAG has been executed
-        2. The topic model file exists in GCS `cleaned/` directory
-        3. Check with Ran (Golden Layer team member) if the ML pipeline is running correctly
-        """)
-        return
-    
-    # ✅ Check if topic column exists (generated by Ran's ML model)
-    has_topic_column = "topic" in topic_df.columns
-    
-    if not has_topic_column:
-        st.warning("""
-        ⚠️ **Topic Modeling Not Yet Completed - Showing Basic Visualizations**
-        
-        The topic model file exists but doesn't contain the `topic` column yet.
-        Showing basic comment analysis visualizations below. 
-        
-        **Once Ran completes the topic modeling DAG**, the ML-generated topic visualizations will automatically appear here.
-        """)
-    
-    # ✅ Use topic_df directly - this is Ran's ML output
-    analysis_df = topic_df.copy()
+    # Use comments_df directly
+    analysis_df = comments_df.copy()
     
     if analysis_df.empty:
-        st.warning("No topic model data available after filtering")
+        st.warning("No comments data available")
         return
     
     # Get selected artists from filtered_df
@@ -1716,78 +1710,18 @@ def render_comments_analysis(comments_df: pd.DataFrame, topic_df: pd.DataFrame, 
         st.warning("No comments match the selected filters")
         return
     
-    # Display info about using Golden Layer ML results (only if topic column exists)
-    if has_topic_column:
-        st.info("""
-        📊 **Using Golden Layer Topic Model Results**
-        
-        This visualization uses machine learning-generated topics from the Golden Layer pipeline.
-        Topics are generated using advanced ML models (not simple keyword matching).
-        """)
-    
-    # Topic distribution (from Ran's ML model) - only show if topic column exists
-    if has_topic_column:
-        st.subheader("📊 Topic Distribution (ML-Generated)")
-        if "topic" in analysis_df.columns:
-            topic_counts = analysis_df["topic"].value_counts()
-            
-            fig = go.Figure(data=[
-                go.Bar(
-                    x=topic_counts.index,
-                    y=topic_counts.values,
-                    marker_color="#1DB954"
-                )
-            ])
-            
-            fig.update_layout(
-                title="Comment Topics Distribution",
-                xaxis_title="Topic",
-                yaxis_title="Number of Comments",
-                height=400,
-                template="plotly_dark"
-            )
-            
-            st.plotly_chart(fig, use_container_width=True)
-            
-            # Topic details - show comments for selected ML-generated topic
-            selected_topic = st.selectbox(
-                "Select ML-Generated Topic to View Comments", 
-                ["All"] + topic_counts.index.tolist()
-            )
-            if selected_topic != "All":
-                topic_comments = analysis_df[analysis_df["topic"] == selected_topic]
-                st.markdown(f"**Comments for topic: {selected_topic}** (from Golden Layer ML model)")
-                
-                # Show available columns
-                display_cols = ["comment"]
-                if "artist" in topic_comments.columns:
-                    display_cols.append("artist")
-                if "song" in topic_comments.columns:
-                    display_cols.append("song")
-                if "timestamp" in topic_comments.columns:
-                    display_cols.append("timestamp")
-                # Include topic column if it exists with additional info
-                if "topic_probability" in topic_comments.columns:
-                    display_cols.append("topic_probability")
-                
-                available_cols = [col for col in display_cols if col in topic_comments.columns]
-                st.dataframe(
-                    topic_comments[available_cols].head(20),
-                    use_container_width=True
-                )
-    else:
-        # Show basic comment statistics when topic column is not available
-        st.subheader("📊 Comment Statistics")
-        if not analysis_df.empty:
-            col1, col2, col3 = st.columns(3)
-            with col1:
-                st.metric("Total Comments", f"{len(analysis_df):,}")
-            with col2:
-                if "artist" in analysis_df.columns:
-                    st.metric("Artists", analysis_df["artist"].nunique())
-            with col3:
-                if "song" in analysis_df.columns:
-                    st.metric("Songs", analysis_df["song"].nunique())
+    # Show basic comment statistics
+    st.subheader("📊 Comment Statistics")
+    if not analysis_df.empty:
+        col1, col2, col3 = st.columns(3)
+        with col1:
+            st.metric("Total Comments", f"{len(analysis_df):,}")
+        with col2:
+            if "artist" in analysis_df.columns:
+                st.metric("Artists", analysis_df["artist"].nunique())
+        with col3:
+            if "song" in analysis_df.columns:
+                st.metric("Songs", analysis_df["song"].nunique())
     
     # Word Clouds - Improved Section
     st.subheader("☁️ Word Cloud Analysis")
@@ -1851,7 +1785,7 @@ def render_comments_analysis(comments_df: pd.DataFrame, topic_df: pd.DataFrame, 
             st.info("No positive comments found")
     
     with col2:
-        st.markdown("### ❤️ Negative Comments")
+        st.markdown("### Negative Comments")
         st.caption(f"Showing {len(negative_comments):,} comments")
         if negative_comments:
             with st.spinner("Generating word cloud..."):
@@ -2782,7 +2716,7 @@ def main() -> None:
     with st.spinner("Loading data from GCS Silver Layer..."):
         summary_df = load_silver_summary_from_gcs()
         comments_df = load_silver_comments_from_gcs()
-        topic_df = load_topic_model_data_from_gcs()
+        # Topic modeling is handled by other team members, not needed here
     
     if summary_df.empty:
         st.error("❌ No data loaded from Silver Layer. Please check GCS connection.")
@@ -2883,7 +2817,7 @@ def main() -> None:
     
     # Tabs for different analyses
     tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([
-        "📊 Daily Snapshot", "📈 YouTube Trends", "💬 Reddit Analysis", "🔄 Cross-Platform Insights", "🤖 ML: Topic Modeling", "🤖 LLM Summary"
+        "📊 Daily Snapshot", "📈 YouTube Trends", "💬 Reddit Analysis", "🔄 Cross-Platform Insights", "💬 Comments Analysis", "🤖 LLM Summary"
     ])
     
     with tab1:
