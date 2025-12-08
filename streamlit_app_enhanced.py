@@ -51,12 +51,39 @@ HF_API_URL = f"https://api-inference.huggingface.co/models/{HF_MODEL}"
 def get_hf_token():
     """Get Hugging Face token from environment or Streamlit secrets."""
     try:
-        if hasattr(st, 'secrets') and 'hf_token' in st.secrets:
-            return st.secrets['hf_token']
-        elif os.getenv("HF_TOKEN"):
-            return os.getenv("HF_TOKEN")
+        if hasattr(st, 'secrets'):
+            # Try multiple ways to access the secret (Streamlit supports both)
+            try:
+                # Method 1: Direct attribute access
+                if hasattr(st.secrets, 'hf_token'):
+                    return st.secrets.hf_token
+            except:
+                pass
+            
+            try:
+                # Method 2: Dictionary access
+                if 'hf_token' in st.secrets:
+                    return st.secrets['hf_token']
+            except:
+                pass
+            
+            try:
+                # Method 3: Using get method if available
+                if hasattr(st.secrets, 'get'):
+                    token = st.secrets.get('hf_token')
+                    if token:
+                        return token
+            except:
+                pass
+    except Exception:
+        pass
+    
+    # Fallback to environment variable
+    try:
+        return os.getenv("HF_TOKEN")
     except:
         pass
+    
     return None
 
 def is_hf_available():
