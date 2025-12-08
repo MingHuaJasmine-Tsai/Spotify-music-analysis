@@ -1915,7 +1915,8 @@ def hf_summarize(text: str) -> str:
         
         for api_url in api_urls:
             try:
-                response = requests.post(api_url, headers=headers, json=payload, timeout=120)
+                # Reduced timeout to prevent infinite loading
+                response = requests.post(api_url, headers=headers, json=payload, timeout=60)
                 
                 if response.status_code == 401:
                     errors.append(f"Endpoint {api_url}: Authentication failed (401)")
@@ -2246,14 +2247,20 @@ def render_llm_summary(comments_df: pd.DataFrame, filtered_df: pd.DataFrame, sum
         try:
             with st.spinner(f"Generating summary using {api_choice}... This may take up to 2 minutes."):
                 summary_text = generate_llm_summary(analysis_comments, filtered_df, use_hf=use_hf)
-                st.session_state[cache_key] = summary_text
-                st.session_state[f"{cache_key}_timestamp"] = datetime.now().isoformat()
-                st.session_state[f"{cache_key}_api"] = api_choice
-                # Force rerun to show new content
-                st.rerun()
+                if summary_text:
+                    st.session_state[cache_key] = summary_text
+                    st.session_state[f"{cache_key}_timestamp"] = datetime.now().isoformat()
+                    st.session_state[f"{cache_key}_api"] = api_choice
+                    # Don't use st.rerun() here - it causes infinite loop
+                    # The summary will be displayed below automatically
+                else:
+                    st.error("❌ Summary generation returned empty result. Please try again.")
         except Exception as e:
             st.error(f"❌ Summary generation failed: {str(e)}")
             st.info("💡 Please try again or switch to a different API.")
+            import traceback
+            with st.expander("🔍 Error Details"):
+                st.code(traceback.format_exc())
     
     # Display cached summary if available
     if cache_key in st.session_state:
