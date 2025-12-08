@@ -2253,26 +2253,41 @@ def render_llm_summary(comments_df: pd.DataFrame, filtered_df: pd.DataFrame, sum
         }).reset_index().sort_values("snapshot_date")
         
         if len(all_daily) > 1:
-            # Calculate cumulative views growth
-            # For YouTube, views are cumulative, so we should compare the latest total
+            # Calculate views growth
+            # Note: YouTube views are cumulative per video, so we need to track the same videos
+            # If different videos are tracked each day, the sum might be similar
             first_views = float(all_daily["youtube_views"].iloc[0])
             last_views = float(all_daily["youtube_views"].iloc[-1])
             
-            # Debug: show the actual values
-            with st.expander("🔍 Growth Calculation Details", expanded=False):
-                st.write(f"**First date ({all_daily['snapshot_date'].iloc[0].date()}):** {first_views:,.0f} views")
-                st.write(f"**Last date ({all_daily['snapshot_date'].iloc[-1].date()}):** {last_views:,.0f} views")
-                st.write(f"**Difference:** {last_views - first_views:,.0f} views")
-                st.write(f"**Number of days:** {len(all_daily)}")
-            
+            # Calculate growth
             if first_views > 0:
                 views_growth = ((last_views - first_views) / first_views) * 100
             else:
                 views_growth = 0.0
             
-            # Only show if there's meaningful growth
+            # Alternative: Calculate average daily views growth
+            # This might be more meaningful if we're tracking different videos each day
+            avg_first = first_views / len(summary_df[summary_df["snapshot_date"] == all_daily["snapshot_date"].iloc[0]])
+            avg_last = last_views / len(summary_df[summary_df["snapshot_date"] == all_daily["snapshot_date"].iloc[-1]])
+            
+            # Show metric with debug info
+            with st.expander("🔍 Growth Calculation Details", expanded=False):
+                st.write(f"**First date ({all_daily['snapshot_date'].iloc[0].date()}):** {first_views:,.0f} total views")
+                st.write(f"**Last date ({all_daily['snapshot_date'].iloc[-1].date()}):** {last_views:,.0f} total views")
+                st.write(f"**Difference:** {last_views - first_views:,.0f} views")
+                st.write(f"**Number of days:** {len(all_daily)}")
+                st.write(f"**Average views per entry (first day):** {avg_first:,.0f}")
+                st.write(f"**Average views per entry (last day):** {avg_last:,.0f}")
+            
+            # Show growth metric
             if abs(views_growth) < 0.01:
-                st.warning(f"⚠️ Views Growth: {views_growth:+.2f}% - Very minimal change detected. This might indicate data is cumulative (same total each day) rather than incremental.")
+                # If growth is essentially 0, show a different metric
+                st.metric(
+                    "Total Views (Period)",
+                    f"{last_views:,.0f}",
+                    delta=f"From {all_daily['snapshot_date'].iloc[0].date()} to {all_daily['snapshot_date'].iloc[-1].date()}"
+                )
+                st.caption("ℹ️ Views appear to be cumulative snapshots. Growth calculation may not be meaningful for this data structure.")
             else:
                 st.metric(
                     "Views Growth",
