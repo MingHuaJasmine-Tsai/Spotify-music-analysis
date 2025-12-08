@@ -654,10 +654,18 @@ def render_daily_snapshot(filtered_df: pd.DataFrame, summary_df: pd.DataFrame) -
         with col1:
             st.markdown("**Top Artists by Views**")
             # Aggregate by artist first to avoid duplicates (sum views if multiple songs)
+            # Debug: Check if we have duplicate artists
+            if filtered_df["artist"].duplicated().any():
+                st.caption(f"⚠️ Found {filtered_df['artist'].duplicated().sum()} duplicate artist entries - aggregating...")
+            
             artist_views = filtered_df.groupby("artist", as_index=False).agg({
                 "youtube_views": "sum"
             }).sort_values("youtube_views", ascending=False)
             top_views = artist_views.head(10)[["artist", "youtube_views"]]
+            
+            # Debug: Show aggregation result
+            if len(artist_views) < len(filtered_df):
+                st.caption(f"✅ Aggregated {len(filtered_df)} rows → {len(artist_views)} unique artists")
             artist_colors = get_artist_colors(top_views["artist"].tolist())
             fig = go.Figure(data=[
                 go.Bar(
@@ -689,6 +697,11 @@ def render_daily_snapshot(filtered_df: pd.DataFrame, summary_df: pd.DataFrame) -
                 "youtube_likes": "sum"
             }).sort_values("youtube_likes", ascending=False)
             top_likes = artist_likes.head(10)[["artist", "youtube_likes"]]
+            
+            # Ensure no duplicates
+            if top_likes["artist"].duplicated().any():
+                st.error("❌ ERROR: Duplicate artists in top_likes!")
+                top_likes = top_likes.drop_duplicates(subset=["artist"], keep="first")
             artist_colors = get_artist_colors(top_likes["artist"].tolist())
             fig = go.Figure(data=[
                 go.Bar(
@@ -732,6 +745,12 @@ def render_daily_snapshot(filtered_df: pd.DataFrame, summary_df: pd.DataFrame) -
                 })
             artist_sentiment = artist_sentiment.sort_values("youtube_pos_ratio", ascending=False)
             top_sentiment = artist_sentiment.head(10)[["artist", "youtube_pos_ratio"]]
+            
+            # Ensure no duplicates
+            if top_sentiment["artist"].duplicated().any():
+                st.error("❌ ERROR: Duplicate artists in top_sentiment!")
+                top_sentiment = top_sentiment.drop_duplicates(subset=["artist"], keep="first")
+            
             artist_colors = get_artist_colors(top_sentiment["artist"].tolist())
             fig = go.Figure(data=[
                 go.Bar(
