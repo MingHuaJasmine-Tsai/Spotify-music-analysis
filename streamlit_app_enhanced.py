@@ -813,12 +813,15 @@ def render_daily_snapshot(filtered_df: pd.DataFrame, summary_df: pd.DataFrame) -
             with col1:
                 st.markdown("**Top by Views**")
                 top_views = latest_data.nlargest(10, "youtube_views")[["artist", "youtube_views"]]
+                artist_colors = get_artist_colors(top_views["artist"].tolist())
                 fig = go.Figure(data=[
                     go.Bar(
                         x=top_views["youtube_views"],
                         y=top_views["artist"],
                         orientation='h',
-                        marker_color="#1DB954"
+                        marker_color=[artist_colors.get(artist, "#1DB954") for artist in top_views["artist"]],
+                        text=[format_number(v) for v in top_views["youtube_views"]],
+                        textposition="outside"
                     )
                 ])
                 fig.update_layout(
@@ -828,17 +831,21 @@ def render_daily_snapshot(filtered_df: pd.DataFrame, summary_df: pd.DataFrame) -
                     height=300,
                     template="plotly_dark"
                 )
+                fig.update_xaxes(tickformat=".0s")
                 st.plotly_chart(fig, use_container_width=True)
             
             with col2:
                 st.markdown("**Top by Likes**")
                 top_likes = latest_data.nlargest(10, "youtube_likes")[["artist", "youtube_likes"]]
+                artist_colors = get_artist_colors(top_likes["artist"].tolist())
                 fig = go.Figure(data=[
                     go.Bar(
                         x=top_likes["youtube_likes"],
                         y=top_likes["artist"],
                         orientation='h',
-                        marker_color="#1DB954"
+                        marker_color=[artist_colors.get(artist, "#1DB954") for artist in top_likes["artist"]],
+                        text=[format_number(v) for v in top_likes["youtube_likes"]],
+                        textposition="outside"
                     )
                 ])
                 fig.update_layout(
@@ -848,6 +855,7 @@ def render_daily_snapshot(filtered_df: pd.DataFrame, summary_df: pd.DataFrame) -
                     height=300,
                     template="plotly_dark"
                 )
+                fig.update_xaxes(tickformat=".0s")
                 st.plotly_chart(fig, use_container_width=True)
             
             with col3:
@@ -862,13 +870,16 @@ def render_daily_snapshot(filtered_df: pd.DataFrame, summary_df: pd.DataFrame) -
                     top_sentiment = sentiment_data.nlargest(10, "youtube_pos_ratio")
                     
                     # Only show if we have at least some data
+                    artist_colors = get_artist_colors(top_sentiment["artist"].tolist())
                     if len(top_sentiment) > 0 and top_sentiment["youtube_pos_ratio"].sum() > 0:
                         fig = go.Figure(data=[
                             go.Bar(
                                 x=top_sentiment["youtube_pos_ratio"],
                                 y=top_sentiment["artist"],
                                 orientation='h',
-                                marker_color="#1DB954"
+                                marker_color=[artist_colors.get(artist, "#1DB954") for artist in top_sentiment["artist"]],
+                                text=[f"{v:.2%}" for v in top_sentiment["youtube_pos_ratio"]],
+                                textposition="outside"
                             )
                         ])
                         max_val = max(0.1, top_sentiment["youtube_pos_ratio"].max() * 1.1)
@@ -880,6 +891,7 @@ def render_daily_snapshot(filtered_df: pd.DataFrame, summary_df: pd.DataFrame) -
                             template="plotly_dark",
                             xaxis=dict(range=[0, max_val])
                         )
+                        fig.update_xaxes(tickformat=".0%")
                         st.plotly_chart(fig, use_container_width=True)
                     else:
                         # Show all artists even if values are 0
@@ -890,7 +902,9 @@ def render_daily_snapshot(filtered_df: pd.DataFrame, summary_df: pd.DataFrame) -
                                     x=top_sentiment["youtube_pos_ratio"],
                                     y=top_sentiment["artist"],
                                     orientation='h',
-                                    marker_color="#888888"
+                                    marker_color=[artist_colors.get(artist, "#888888") for artist in top_sentiment["artist"]],
+                                    text=[f"{v:.2%}" for v in top_sentiment["youtube_pos_ratio"]],
+                                    textposition="outside"
                                 )
                             ])
                             fig.update_layout(
