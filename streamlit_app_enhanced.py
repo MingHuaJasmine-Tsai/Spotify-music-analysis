@@ -46,7 +46,8 @@ except ImportError:
 
 # Hugging Face settings
 HF_MODEL = "facebook/bart-large-cnn"
-HF_API_URL = f"https://router.huggingface.co/models/{HF_MODEL}"
+# Use standard Inference API endpoint (more reliable than router)
+HF_API_URL = f"https://api-inference.huggingface.co/models/{HF_MODEL}"
 
 def get_hf_token():
     """Get Hugging Face token from environment or Streamlit secrets."""
@@ -1921,6 +1922,7 @@ def hf_summarize(text: str) -> str:
     """
     Call Hugging Face Inference API for summarization.
     Uses facebook/bart-large-cnn model.
+    Tries standard endpoint first, falls back to router if needed.
     """
     hf_token = get_hf_token()
     if not hf_token:
@@ -1939,28 +1941,59 @@ def hf_summarize(text: str) -> str:
         },
     }
     
-    try:
-        response = requests.post(HF_API_URL, headers=headers, json=payload, timeout=120)
-        
-        if response.status_code == 401:
-            raise RuntimeError(f"Hugging Face API authentication failed (401). Please check your token is valid and has 'Read' access.")
-        elif response.status_code == 403:
-            raise RuntimeError(f"Hugging Face API access forbidden (403). Token may not have permission to access this model.")
-        elif response.status_code != 200:
-            error_text = response.text[:500] if len(response.text) > 500 else response.text
-            raise RuntimeError(f"Hugging Face API error ({response.status_code}): {error_text}")
-        
-        data = response.json()
-        
-        # Expected response: [{"summary_text": "..."}]
-        if isinstance(data, list) and len(data) > 0 and "summary_text" in data[0]:
-            return data[0]["summary_text"]
-        
-        raise RuntimeError(f"Unexpected response format from Hugging Face API: {json.dumps(data, indent=2)[:500]}")
-    except requests.exceptions.Timeout:
-        raise RuntimeError("Hugging Face API request timed out. The model may be loading. Please try again in a moment.")
-    except requests.exceptions.RequestException as e:
-        raise RuntimeError(f"Failed to connect to Hugging Face API: {e}")
+    # Try standard endpoint first
+    api_urls = [
+        f"https://api-inference.huggingface.co/models/{HF_MODEL}",
+        f"https://router.huggingface.co/inference/{HF_MODEL}",
+    ]
+    
+    last_error = None
+    for api_url in api_urls:
+        try:
+            response = requests.post(api_url, headers=headers, json=payload, timeout=120)
+            
+            if response.status_code == 401:
+                raise RuntimeError(f"Hugging Face API authentication failed (401). Please check your token is valid and has 'Read' access.")
+            elif response.status_code == 403:
+                raise RuntimeError(f"Hugging Face API access forbidden (403). Token may not have permission to access this model.")
+            elif response.status_code == 404:
+                # Try next endpoint if 404
+                last_error = f"Hugging Face API endpoint not found (404): {api_url}"
+                continue
+            elif response.status_code == 410:
+                # Try next endpoint if deprecated
+                last_error = f"Hugging Face API endpoint deprecated (410): {api_url}"
+                continue
+            elif response.status_code != 200:
+                error_text = response.text[:500] if len(response.text) > 500 else response.text
+                last_error = f"Hugging Face API error ({response.status_code}): {error_text}"
+                continue
+            
+            data = response.json()
+            
+            # Expected response: [{"summary_text": "..."}]
+            if isinstance(data, list) and len(data) > 0 and "summary_text" in data[0]:
+                return data[0]["summary_text"]
+            
+            # Also handle direct dict response format
+            if isinstance(data, dict) and "summary_text" in data:
+                return data["summary_text"]
+            
+            last_error = f"Unexpected response format from Hugging Face API: {json.dumps(data, indent=2)[:500]}"
+            continue
+            
+        except requests.exceptions.Timeout:
+            last_error = "Hugging Face API request timed out. The model may be loading. Please try again in a moment."
+            continue
+        except requests.exceptions.RequestException as e:
+            last_error = f"Failed to connect to Hugging Face API: {e}"
+            continue
+    
+    # If all endpoints failed, raise the last error
+    if last_error:
+        raise RuntimeError(last_error)
+    else:
+        raise RuntimeError("All Hugging Face API endpoints failed.")
 
 
 def summary_to_bullets(summary: str, max_bullets: int = 5) -> str:
