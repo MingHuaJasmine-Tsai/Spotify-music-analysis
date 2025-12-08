@@ -1077,8 +1077,9 @@ def render_youtube_trends(filtered_df: pd.DataFrame, summary_df: pd.DataFrame) -
             x=daily["snapshot_date"],
             y=daily["youtube_views"],
             name="YouTube Views",
-            line=dict(color="#1DB954", width=2),
-            mode="lines+markers"
+            line=dict(color="#1DB954", width=3),  # Darker green, thicker line
+            mode="lines+markers",
+            marker=dict(size=8, color="#1DB954")
         ),
         secondary_y=False,
     )
@@ -1088,8 +1089,9 @@ def render_youtube_trends(filtered_df: pd.DataFrame, summary_df: pd.DataFrame) -
             x=daily["snapshot_date"],
             y=daily["youtube_likes"],
             name="YouTube Likes",
-            line=dict(color="#1ed760", width=2),
-            mode="lines+markers"
+            line=dict(color="#FF4500", width=3),  # Orange/Red for better contrast
+            mode="lines+markers",
+            marker=dict(size=8, color="#FF4500")
         ),
         secondary_y=True,
     )
@@ -1154,23 +1156,62 @@ def render_youtube_trends(filtered_df: pd.DataFrame, summary_df: pd.DataFrame) -
             artist_totals = artist_trends.groupby("artist")["youtube_views"].sum().sort_values(ascending=False)
             top_10_artists = artist_totals.head(10).index.tolist()
             
-            fig = go.Figure()
-            for artist in top_10_artists:
+            # Separate Taylor Swift if present (she dominates the scale)
+            taylor_swift = "Taylor Swift" if "Taylor Swift" in top_10_artists else None
+            other_artists = [a for a in top_10_artists if a != taylor_swift]
+            
+            fig = make_subplots(specs=[[{"secondary_y": False}]])
+            
+            # Use distinct colors for each artist
+            import plotly.colors as pc
+            distinct_colors = [
+                "#1DB954", "#FF4500", "#1f77b4", "#ff7f0e", "#2ca02c",
+                "#d62728", "#9467bd", "#8c564b", "#e377c2", "#7f7f7f"
+            ]
+            
+            # Add Taylor Swift on primary axis if present
+            if taylor_swift:
+                taylor_data = artist_trends[artist_trends["artist"] == taylor_swift]
+                fig.add_trace(go.Scatter(
+                    x=taylor_data["snapshot_date"],
+                    y=taylor_data["youtube_views"],
+                    name=taylor_swift,
+                    mode="lines+markers",
+                    line=dict(color="#FFD700", width=3),  # Gold for Taylor Swift
+                    marker=dict(size=8)
+                ))
+            
+            # Add other artists with distinct colors
+            for idx, artist in enumerate(other_artists):
                 artist_data = artist_trends[artist_trends["artist"] == artist]
                 fig.add_trace(go.Scatter(
                     x=artist_data["snapshot_date"],
                     y=artist_data["youtube_views"],
                     name=artist,
-                    mode="lines+markers"
+                    mode="lines+markers",
+                    line=dict(color=distinct_colors[idx % len(distinct_colors)], width=2),
+                    marker=dict(size=6)
                 ))
             
             fig.update_layout(
                 title="Artist Views Comparison (Top 10 with multi-date data)",
                 xaxis_title="Date",
                 yaxis_title="YouTube Views",
-                height=400,
-                template="plotly_dark"
+                height=500,
+                template="plotly_dark",
+                hovermode='x unified',
+                legend=dict(
+                    orientation="v",
+                    yanchor="top",
+                    y=1,
+                    xanchor="left",
+                    x=1.02,
+                    font=dict(size=9)
+                ),
+                margin=dict(l=50, r=150, t=50, b=50)  # Extra right margin for legend
             )
+            fig.update_xaxes(type='date', tickformat='%Y-%m-%d')
+            fig.update_yaxes(tickformat=".0s")  # Use scientific notation for better readability
             
             st.plotly_chart(fig, use_container_width=True)
         # If no multi-date artists, show overall trend instead
@@ -2545,7 +2586,22 @@ def render_radar_insights(summary_df: pd.DataFrame) -> None:
     metric_keys = ["youtube_views_norm", "youtube_likes_norm", "youtube_comment_count_norm", 
                    "reddit_comment_count_norm", "sentiment_norm"]
     
-    colors = ["#1DB954", "#1ed760", "#ffffff", "#FF5700", "#1f77b4"]
+    # Use distinct colors for each artist (10 different colors)
+    import plotly.colors as pc
+    distinct_colors = [
+        "#1DB954",  # Spotify Green
+        "#FF4500",  # Reddit Orange
+        "#1f77b4",  # Blue
+        "#ff7f0e",  # Orange
+        "#2ca02c",  # Green
+        "#d62728",  # Red
+        "#9467bd",  # Purple
+        "#8c564b",  # Brown
+        "#e377c2",  # Pink
+        "#7f7f7f",  # Gray
+        "#bcbd22",  # Yellow-green
+        "#17becf",  # Cyan
+    ]
     
     for idx, (_, row) in enumerate(top_artists.iterrows()):
         values = [row[key] for key in metric_keys]
@@ -2553,12 +2609,17 @@ def render_radar_insights(summary_df: pd.DataFrame) -> None:
         values = values + [values[0]]
         labels = metric_labels + [metric_labels[0]]
         
+        # Use distinct color for each artist
+        artist_color = distinct_colors[idx % len(distinct_colors)]
+        
         fig.add_trace(go.Scatterpolar(
             r=values,
             theta=labels,
             fill='toself',
             name=row["artist"],
-            line=dict(color=colors[idx % len(colors)], width=2),
+            line=dict(color=artist_color, width=2.5),
+            fillcolor=artist_color,
+            opacity=0.6,  # Add transparency to see overlapping areas
             hovertemplate=f"<b>{row['artist']}</b><br>" +
                           f"YT Views: {row['youtube_views']:,.0f}<br>" +
                           f"YT Likes: {row['youtube_likes']:,.0f}<br>" +
@@ -2571,12 +2632,31 @@ def render_radar_insights(summary_df: pd.DataFrame) -> None:
         polar=dict(
             radialaxis=dict(
                 visible=True,
-                range=[0, 1]
-            )),
+                range=[0, 1],
+                tickmode='linear',
+                tick0=0,
+                dtick=0.2,
+                tickfont=dict(size=10),
+                gridcolor="rgba(255,255,255,0.3)"
+            ),
+            angularaxis=dict(
+                tickfont=dict(size=11),
+                linecolor="rgba(255,255,255,0.5)"
+            )
+        ),
         showlegend=True,
+        legend=dict(
+            orientation="v",
+            yanchor="top",
+            y=1,
+            xanchor="left",
+            x=1.15,
+            font=dict(size=10)
+        ),
         title="Artist Performance Radar Chart (Top 10)",
-        height=500,
-        template="plotly_dark"
+        height=600,
+        template="plotly_dark",
+        margin=dict(l=50, r=200, t=50, b=50)  # Extra right margin for legend
     )
     
     st.plotly_chart(fig, use_container_width=True)
