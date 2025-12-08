@@ -1150,8 +1150,12 @@ def render_youtube_trends(filtered_df: pd.DataFrame, summary_df: pd.DataFrame) -
                 "youtube_views": "sum"
             }).reset_index()
             
+            # Get top 10 artists by total views
+            artist_totals = artist_trends.groupby("artist")["youtube_views"].sum().sort_values(ascending=False)
+            top_10_artists = artist_totals.head(10).index.tolist()
+            
             fig = go.Figure()
-            for artist in multi_date_artists[:5]:  # Limit to 5 artists for readability
+            for artist in top_10_artists:
                 artist_data = artist_trends[artist_trends["artist"] == artist]
                 fig.add_trace(go.Scatter(
                     x=artist_data["snapshot_date"],
@@ -1161,7 +1165,7 @@ def render_youtube_trends(filtered_df: pd.DataFrame, summary_df: pd.DataFrame) -
                 ))
             
             fig.update_layout(
-                title="Artist Views Comparison (Top 5 with multi-date data)",
+                title="Artist Views Comparison (Top 10 with multi-date data)",
                 xaxis_title="Date",
                 yaxis_title="YouTube Views",
                 height=400,
@@ -1256,8 +1260,12 @@ def render_reddit_analysis(summary_df: pd.DataFrame) -> None:
             reddit_daily["snapshot_date"] = pd.to_datetime(reddit_daily["snapshot_date"])
             reddit_daily = reddit_daily.sort_values("snapshot_date")
             
+            # Get top 10 artists by total comments
+            artist_totals = reddit_daily.groupby("artist")["num_comments"].sum().sort_values(ascending=False)
+            top_10_artists = artist_totals.head(10).index.tolist()
+            
             fig = go.Figure()
-            for artist in reddit_daily["artist"].unique():
+            for artist in top_10_artists:
                 artist_data = reddit_daily[reddit_daily["artist"] == artist]
                 fig.add_trace(go.Scatter(
                     x=artist_data["snapshot_date"],
@@ -1267,7 +1275,7 @@ def render_reddit_analysis(summary_df: pd.DataFrame) -> None:
                 ))
             
             fig.update_layout(
-                title="Reddit Comments Over Time",
+                title="Reddit Comments Over Time (Top 10 Artists)",
                 xaxis_title="Date",
                 yaxis_title="Number of Comments",
                 height=400,
@@ -2183,8 +2191,8 @@ def render_llm_summary(comments_df: pd.DataFrame, topic_df: pd.DataFrame, filter
 
 
 def render_top_performers(youtube_df: pd.DataFrame) -> None:
-    """Render top 5 engagement leaders using cross-platform metrics."""
-    st.subheader("🏆 Top 5 Engagement Leaders")
+    """Render top 10 engagement leaders using cross-platform metrics."""
+    st.subheader("🏆 Top 10 Engagement Leaders")
     
     if youtube_df.empty:
         st.info("No engagement data available for the selected filters.")
@@ -2230,8 +2238,8 @@ def render_top_performers(youtube_df: pd.DataFrame) -> None:
     # Calculate engagement index
     yt["engagement_index"] = yt[norm_cols].mean(axis=1)
     
-    # Get top 5
-    top = yt.nlargest(5, "engagement_index")
+    # Get top 10
+    top = yt.nlargest(10, "engagement_index")
     
     if top.empty:
         st.info("Not enough data to calculate engagement leaders.")
@@ -2251,14 +2259,16 @@ def render_top_performers(youtube_df: pd.DataFrame) -> None:
     ))
     
     fig.update_layout(
-        title="Top 5 Engagement Leaders",
+        title="Top 10 Engagement Leaders",
         xaxis_title="Engagement Index",
         yaxis_title="Artist",
-        height=300,
+        height=400,
         template="plotly_dark",
+        margin=dict(l=150, r=50, t=50, b=50),  # Increase left margin for artist names
         showlegend=False,
         yaxis=dict(autorange="reversed")
     )
+    fig.update_yaxes(tickangle=0)  # Ensure artist names are horizontal
     
     st.plotly_chart(fig, use_container_width=True)
     
@@ -2471,14 +2481,16 @@ def render_discussion_distribution(summary_df: pd.DataFrame) -> None:
     ))
     
     fig.update_layout(
-        title="Reddit Discussion Activity by Artist",
+        title="Reddit Discussion Activity by Artist (Top 10)",
         xaxis_title="Total Reddit Comments",
         yaxis_title="Artist",
         height=400,
         template="plotly_dark",
+        margin=dict(l=150, r=50, t=50, b=50),  # Increase left margin for artist names
         showlegend=False,
         yaxis=dict(autorange="reversed")
     )
+    fig.update_yaxes(tickangle=0)  # Ensure artist names are horizontal
     
     st.plotly_chart(fig, use_container_width=True)
     
@@ -2506,8 +2518,8 @@ def render_radar_insights(summary_df: pd.DataFrame) -> None:
         st.info("No artist data available.")
         return
     
-    # Get top 5 artists by views
-    top_artists = artist_metrics.nlargest(5, "youtube_views")
+    # Get top 10 artists by views
+    top_artists = artist_metrics.nlargest(10, "youtube_views")
     
     if top_artists.empty:
         st.info("Not enough data to build the radar chart.")
@@ -2562,7 +2574,7 @@ def render_radar_insights(summary_df: pd.DataFrame) -> None:
                 range=[0, 1]
             )),
         showlegend=True,
-        title="Artist Performance Radar Chart (Top 5)",
+        title="Artist Performance Radar Chart (Top 10)",
         height=500,
         template="plotly_dark"
     )
