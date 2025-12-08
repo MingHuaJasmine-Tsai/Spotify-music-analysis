@@ -932,10 +932,10 @@ def render_daily_snapshot(filtered_df: pd.DataFrame, summary_df: pd.DataFrame) -
                 
                 artist_sentiment = artist_sentiment.sort_values("youtube_pos_ratio", ascending=False)
                 top_sentiment = artist_sentiment.head(10)[["artist", "youtube_pos_ratio"]]
-                    
-                    # Only show if we have at least some data
-                    artist_colors = get_artist_colors(top_sentiment["artist"].tolist())
-                    if len(top_sentiment) > 0 and top_sentiment["youtube_pos_ratio"].sum() > 0:
+                
+                # Only show if we have at least some data
+                artist_colors = get_artist_colors(top_sentiment["artist"].tolist())
+                if len(top_sentiment) > 0 and top_sentiment["youtube_pos_ratio"].sum() > 0:
                         fig = go.Figure(data=[
                             go.Bar(
                                 x=top_sentiment["youtube_pos_ratio"],
