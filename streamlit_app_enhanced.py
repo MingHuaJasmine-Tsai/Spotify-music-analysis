@@ -2105,7 +2105,7 @@ def generate_llm_summary(comments_df: pd.DataFrame, summary_df: pd.DataFrame, us
     return summary
 
 
-def render_llm_summary(comments_df: pd.DataFrame, filtered_df: pd.DataFrame) -> None:
+def render_llm_summary(comments_df: pd.DataFrame, filtered_df: pd.DataFrame, summary_df: pd.DataFrame) -> None:
     """Render LLM summary generation interface."""
     st.header("🤖 LLM Summary Generation")
     
@@ -2244,9 +2244,8 @@ def render_llm_summary(comments_df: pd.DataFrame, filtered_df: pd.DataFrame) -> 
     # Additional insights
     st.subheader("🔍 Key Insights")
     
-    if not filtered_df.empty:
-        # Trend insights - use all available data, not just filtered
-        # Get all dates from summary_df to calculate proper growth
+    if not filtered_df.empty and not summary_df.empty:
+        # Trend insights - use full summary_df to calculate proper growth across all dates
         all_daily = summary_df.groupby("snapshot_date").agg({
             "youtube_views": "sum",
             "youtube_likes": "sum",
@@ -2904,7 +2903,7 @@ def main() -> None:
         render_comments_analysis(comments_df, filtered_df)
     
     with tab6:
-        render_llm_summary(comments_df, filtered_df)
+        render_llm_summary(comments_df, filtered_df, summary_df)
 
 
 if __name__ == "__main__":
