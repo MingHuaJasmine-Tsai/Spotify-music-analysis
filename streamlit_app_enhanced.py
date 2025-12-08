@@ -2202,67 +2202,73 @@ def render_llm_summary(comments_df: pd.DataFrame, filtered_df: pd.DataFrame) -> 
         )
         use_hf = (api_choice == "Hugging Face" and is_hf_available())
     
+    # Create a unique cache key based on data content and filters
+    import hashlib
+    data_hash = hashlib.md5(
+        f"{len(analysis_comments)}_{len(filtered_df)}_{api_choice}_{filtered_df['youtube_views'].sum() if not filtered_df.empty else 0}".encode()
+    ).hexdigest()[:8]
+    cache_key = f"summary_{data_hash}_{api_choice}"
+    
     col_btn1, col_btn2 = st.columns([1, 4])
     with col_btn1:
         generate_btn = st.button("🔄 Generate Summary", type="primary", use_container_width=True)
     with col_btn2:
-        if "summary_text" in st.session_state:
+        if cache_key in st.session_state:
             if st.button("🗑️ Clear Cache", use_container_width=True):
-                # Clear cached summary
-                if "summary_text" in st.session_state:
-                    del st.session_state["summary_text"]
-                if "api_used" in st.session_state:
-                    del st.session_state["api_used"]
+                # Clear all cached summaries
+                keys_to_clear = [k for k in st.session_state.keys() if k.startswith("summary_")]
+                for k in keys_to_clear:
+                    del st.session_state[k]
                 st.rerun()
     
-    # Generate summary - only when button is clicked or no cached summary exists
-    if generate_btn:
-        # Clear old summary when generating new one
-        if "summary_text" in st.session_state:
-            del st.session_state["summary_text"]
-        if "api_used" in st.session_state:
-            del st.session_state["api_used"]
-        
+    # Generate summary - only when button is clicked or cache doesn't exist for this data
+    if generate_btn or cache_key not in st.session_state:
         # Generate new summary with timeout handling
         try:
             with st.spinner(f"Generating summary using {api_choice}... This may take up to 2 minutes."):
                 summary_text = generate_llm_summary(analysis_comments, filtered_df, use_hf=use_hf)
-                st.session_state["summary_text"] = summary_text
-                st.session_state["api_used"] = api_choice
-                st.session_state["summary_timestamp"] = datetime.now().isoformat()
+                st.session_state[cache_key] = summary_text
+                st.session_state[f"{cache_key}_timestamp"] = datetime.now().isoformat()
+                st.session_state[f"{cache_key}_api"] = api_choice
         except Exception as e:
             st.error(f"❌ Summary generation failed: {str(e)}")
             st.info("💡 Please try again or switch to a different API.")
-            if "summary_text" in st.session_state:
-                del st.session_state["summary_text"]
     
     # Display cached summary if available
-    if "summary_text" in st.session_state:
-        if "api_used" in st.session_state:
-            st.caption(f"Generated using {st.session_state['api_used']}" + 
-                      (f" at {st.session_state.get('summary_timestamp', '')}" if "summary_timestamp" in st.session_state else ""))
-        st.markdown(st.session_state["summary_text"])
+    if cache_key in st.session_state:
+        if f"{cache_key}_api" in st.session_state:
+            st.caption(f"Generated using {st.session_state[f'{cache_key}_api']}" + 
+                      (f" at {st.session_state.get(f'{cache_key}_timestamp', '')}" if f"{cache_key}_timestamp" in st.session_state else ""))
+        st.markdown(st.session_state[cache_key])
     
     # Additional insights
     st.subheader("🔍 Key Insights")
     
     if not filtered_df.empty:
-        # Trend insights
-        daily = filtered_df.groupby("snapshot_date").agg({
+        # Trend insights - use all available data, not just filtered
+        # Get all dates from summary_df to calculate proper growth
+        all_daily = summary_df.groupby("snapshot_date").agg({
             "youtube_views": "sum",
             "youtube_likes": "sum",
             "reddit_comment_count": "sum"
-        }).reset_index()
+        }).reset_index().sort_values("snapshot_date")
         
-        if len(daily) > 1:
-            views_growth = ((daily["youtube_views"].iloc[-1] - daily["youtube_views"].iloc[0]) / 
-                          daily["youtube_views"].iloc[0] * 100)
+        if len(all_daily) > 1:
+            first_views = all_daily["youtube_views"].iloc[0]
+            last_views = all_daily["youtube_views"].iloc[-1]
+            
+            if first_views > 0:
+                views_growth = ((last_views - first_views) / first_views) * 100
+            else:
+                views_growth = 0.0
             
             st.metric(
                 "Views Growth",
                 f"{views_growth:+.1f}%",
-                delta=f"From {daily['snapshot_date'].iloc[0].date()} to {daily['snapshot_date'].iloc[-1].date()}"
+                delta=f"From {all_daily['snapshot_date'].iloc[0].date()} to {all_daily['snapshot_date'].iloc[-1].date()}"
             )
+        elif len(all_daily) == 1:
+            st.info("ℹ️ Only one day of data available. Growth calculation requires multiple days.")
         
         # Sentiment insights
         avg_sentiment = filtered_df["youtube_pos_ratio"].mean()
