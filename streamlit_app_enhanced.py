@@ -1420,18 +1420,15 @@ def render_reddit_analysis(summary_df: pd.DataFrame) -> None:
             with col3:
                 total_reddit = artist_totals.sum()
                 st.metric("Total Comments", f"{total_reddit:,.0f}")
-        
-        # Reddit data table
-        st.subheader("📋 Reddit Data Table")
-        display_cols = ["snapshot_date", "artist", "song", "subreddit", "title", "num_comments", "score"]
-        available_cols = [col for col in display_cols if col in reddit_df.columns]
-        st.dataframe(
-            reddit_df[available_cols].head(100),
-            use_container_width=True
-        )
-        
-    except Exception as e:
-        st.error(f"❌ Error loading Reddit data: {e}")
+    
+    # Reddit data table
+    st.subheader("📋 Reddit Data Table")
+    display_cols = ["snapshot_date", "artist", "song", "subreddit", "title", "num_comments", "score"]
+    available_cols = [col for col in display_cols if col in reddit_df.columns]
+    st.dataframe(
+        reddit_df[available_cols].head(100),
+        use_container_width=True
+    )
 
 
 def render_lag_slider_analysis(filtered_df: pd.DataFrame, summary_df: pd.DataFrame) -> None:
