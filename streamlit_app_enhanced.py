@@ -46,7 +46,7 @@ except ImportError:
 
 # Hugging Face settings
 HF_MODEL = "facebook/bart-large-cnn"
-HF_API_URL = f"https://api-inference.huggingface.co/models/{HF_MODEL}"
+HF_API_URL = f"https://router.huggingface.co/models/{HF_MODEL}"
 
 def get_hf_token():
     """Get Hugging Face token from environment or Streamlit secrets."""
