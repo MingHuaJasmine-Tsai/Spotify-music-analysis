@@ -1309,23 +1309,29 @@ def render_reddit_analysis(summary_df: pd.DataFrame) -> None:
         except Exception as e:
             st.error(f"❌ Error loading Reddit data: {e}")
             return
-        
-        # Reddit data overview
-        st.subheader("📊 Reddit Data Overview")
-        
-        if "artist" in reddit_df.columns:
-            reddit_artists = reddit_df["artist"].dropna().unique()
-            if len(reddit_artists) > 0:
-                st.write(f"**Artists with Reddit data**: {', '.join(reddit_artists)}")
-            else:
-                st.warning("⚠️ No artists found in Reddit data")
-        
-        if "num_comments" in reddit_df.columns:
-            total_comments = reddit_df["num_comments"].sum()
-            st.metric("Total Reddit Comments", f"{total_comments:,.0f}")
-        
-        # Reddit trends by artist
-        if "artist" in reddit_df.columns and "num_comments" in reddit_df.columns and "snapshot_date" in reddit_df.columns:
+    
+    # Check if we have valid data
+    if reddit_df.empty:
+        st.warning("⚠️ No Reddit data available")
+        return
+    
+    # Reddit data overview
+    st.subheader("📊 Reddit Data Overview")
+    
+    if "artist" in reddit_df.columns:
+        reddit_artists = reddit_df["artist"].dropna().unique()
+        if len(reddit_artists) > 0:
+            st.write(f"**Artists with Reddit data**: {len(reddit_artists)} artists")
+            st.caption(f"Artists: {', '.join(sorted(reddit_artists))}")
+        else:
+            st.warning("⚠️ No artists found in Reddit data")
+    
+    if "num_comments" in reddit_df.columns:
+        total_comments = reddit_df["num_comments"].sum()
+        st.metric("Total Reddit Comments", f"{total_comments:,.0f}")
+    
+    # Reddit trends by artist
+    if "artist" in reddit_df.columns and "num_comments" in reddit_df.columns and "snapshot_date" in reddit_df.columns:
             st.subheader("📈 Reddit Comments by Artist")
             
             reddit_daily = reddit_df.groupby(["snapshot_date", "artist"]).agg({
