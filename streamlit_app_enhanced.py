@@ -254,9 +254,19 @@ def load_silver_summary_from_gcs() -> pd.DataFrame:
         if "comment_count" in df.columns and "youtube_comment_count" not in df.columns:
             df["youtube_comment_count"] = df.get("comment_count", 0)
         
-        # Add reddit_comment_count if missing
-        if "reddit_comment_count" not in df.columns:
+        # Map Reddit column names - handle different naming conventions
+        if "reddit_num_comments" in df.columns and "reddit_comment_count" not in df.columns:
+            df["reddit_comment_count"] = df["reddit_num_comments"]
+        elif "reddit_comment_count" not in df.columns:
             df["reddit_comment_count"] = 0
+        
+        # Also map other Reddit sentiment columns if they exist
+        if "reddit_pos_comments" in df.columns and "reddit_pos_ratio" not in df.columns:
+            # Calculate positive ratio if we have total comments
+            if "reddit_comment_count" in df.columns:
+                total = df["reddit_comment_count"]
+                df["reddit_pos_ratio"] = (df["reddit_pos_comments"] / total).fillna(0)
+                df["reddit_pos_ratio"] = df["reddit_pos_ratio"].replace([np.inf, -np.inf], 0)
         
         # Remove duplicates - keep latest entry for same artist/song/date
         if "snapshot_date" in df.columns and "artist" in df.columns and "song" in df.columns:
