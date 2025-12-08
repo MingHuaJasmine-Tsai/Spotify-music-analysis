@@ -1658,8 +1658,13 @@ def hf_summarize(text: str) -> str:
     try:
         response = requests.post(HF_API_URL, headers=headers, json=payload, timeout=120)
         
-        if response.status_code != 200:
-            raise RuntimeError(f"Hugging Face API error: {response.status_code} - {response.text}")
+        if response.status_code == 401:
+            raise RuntimeError(f"Hugging Face API authentication failed (401). Please check your token is valid and has 'Read' access.")
+        elif response.status_code == 403:
+            raise RuntimeError(f"Hugging Face API access forbidden (403). Token may not have permission to access this model.")
+        elif response.status_code != 200:
+            error_text = response.text[:500] if len(response.text) > 500 else response.text
+            raise RuntimeError(f"Hugging Face API error ({response.status_code}): {error_text}")
         
         data = response.json()
         
@@ -1667,7 +1672,9 @@ def hf_summarize(text: str) -> str:
         if isinstance(data, list) and len(data) > 0 and "summary_text" in data[0]:
             return data[0]["summary_text"]
         
-        raise RuntimeError(f"Unexpected response format from Hugging Face API: {json.dumps(data, indent=2)}")
+        raise RuntimeError(f"Unexpected response format from Hugging Face API: {json.dumps(data, indent=2)[:500]}")
+    except requests.exceptions.Timeout:
+        raise RuntimeError("Hugging Face API request timed out. The model may be loading. Please try again in a moment.")
     except requests.exceptions.RequestException as e:
         raise RuntimeError(f"Failed to connect to Hugging Face API: {e}")
 
@@ -1721,7 +1728,12 @@ def generate_llm_summary(comments_df: pd.DataFrame, summary_df: pd.DataFrame, us
             else:
                 return f"## Overall Sentiment & Key Themes (Hugging Face BART)\n\n{bullets}"
         except Exception as e:
-            st.warning(f"⚠️ Hugging Face summarization failed: {e}")
+            error_msg = str(e)
+            # Show detailed error
+            st.error(f"❌ Hugging Face summarization failed: {error_msg}")
+            # If it's an API error, show more details
+            if "API error" in error_msg or "status_code" in error_msg:
+                st.info("💡 This might be a token permission issue. Please check your Hugging Face token has 'Read' access.")
             # Fall through to OpenAI or fallback
     
     # Try OpenAI if available and HF not used or failed
@@ -1813,12 +1825,26 @@ def render_llm_summary(comments_df: pd.DataFrame, topic_df: pd.DataFrame, filter
         st.subheader("📊 Automated Insights")
     
     with col2:
-        # Show API status
+        # Show API status with debug info
         hf_available = is_hf_available()
+        hf_token = get_hf_token()
+        
         if hf_available:
             st.success("✅ Hugging Face Available")
+            # Debug: Show token status (first 10 chars only)
+            if hf_token:
+                st.caption(f"Token: {hf_token[:10]}...")
         else:
             st.warning("⚠️ Hugging Face: Set HF_TOKEN in Secrets")
+            # Debug info
+            with st.expander("🔍 Debug Info"):
+                st.write(f"Has st.secrets: {hasattr(st, 'secrets')}")
+                if hasattr(st, 'secrets'):
+                    try:
+                        st.write(f"Secrets keys: {list(st.secrets.keys())}")
+                    except:
+                        st.write("Cannot list secrets keys")
+                st.write(f"HF_TOKEN env var: {os.getenv('HF_TOKEN') is not None}")
         
         if OPENAI_AVAILABLE:
             st.success("✅ OpenAI Available")
