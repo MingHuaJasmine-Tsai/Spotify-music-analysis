@@ -53,40 +53,56 @@ def get_hf_token():
     # Try Streamlit secrets first
     try:
         if hasattr(st, 'secrets'):
-            # Method 1: Try direct attribute access (most common for top-level keys)
+            # Method 1: Try section access (st.secrets.tokens.hf_token) - recommended format
             try:
-                token = getattr(st.secrets, 'hf_token', None)
-                if token:
-                    return token
-            except:
+                if hasattr(st.secrets, 'tokens'):
+                    token = st.secrets.tokens.hf_token
+                    if token and isinstance(token, str) and token.strip():
+                        return token.strip()
+            except (AttributeError, KeyError):
+                pass
+            except Exception:
                 pass
             
-            # Method 2: Try dictionary-style access
+            # Method 2: Try direct attribute access (for top-level keys - legacy support)
+            try:
+                token = st.secrets.hf_token
+                if token and isinstance(token, str) and token.strip():
+                    return token.strip()
+            except AttributeError:
+                pass
+            except Exception:
+                pass
+            
+            # Method 3: Try dictionary-style access
+            try:
+                if hasattr(st.secrets, 'tokens') and hasattr(st.secrets.tokens, '__getitem__'):
+                    token = st.secrets.tokens['hf_token']
+                    if token and isinstance(token, str) and token.strip():
+                        return token.strip()
+            except (KeyError, AttributeError, TypeError):
+                pass
+            except Exception:
+                pass
+            
+            # Method 4: Try top-level dictionary access (legacy)
             try:
                 if hasattr(st.secrets, '__getitem__'):
                     token = st.secrets['hf_token']
-                    if token:
-                        return token
+                    if token and isinstance(token, str) and token.strip():
+                        return token.strip()
             except (KeyError, AttributeError):
                 pass
-            
-            # Method 3: Try get method
-            try:
-                if hasattr(st.secrets, 'get'):
-                    token = st.secrets.get('hf_token')
-                    if token:
-                        return token
-            except:
+            except Exception:
                 pass
-    except Exception as e:
-        # Silently fail and try environment variable
+    except Exception:
         pass
     
     # Fallback to environment variable
     try:
         token = os.getenv("HF_TOKEN")
-        if token:
-            return token
+        if token and isinstance(token, str) and token.strip():
+            return token.strip()
     except:
         pass
     
@@ -140,7 +156,9 @@ def get_latest_silver_file(bucket, prefix: str, pattern: str) -> Optional[str]:
     """
     Find the latest file in cleaned/ directory matching the pattern.
     Returns the filename (not full path) of the latest file.
+    Uses date in filename (YYYYMMDD) for sorting, more reliable than time_created.
     """
+    import re
     try:
         blobs = list(bucket.list_blobs(prefix=prefix))
         matching_files = [
@@ -149,8 +167,19 @@ def get_latest_silver_file(bucket, prefix: str, pattern: str) -> Optional[str]:
         ]
         
         if matching_files:
-            # Sort by time_created (most recent first)
-            latest = max(matching_files, key=lambda x: x.time_created)
+            # Extract date from filename (YYYYMMDD) and sort by date
+            def get_date_from_filename(blob):
+                filename = blob.name.split('/')[-1]
+                # Look for 8-digit date pattern (YYYYMMDD)
+                match = re.search(r'(\d{8})', filename)
+                if match:
+                    return match.group(1)
+                # Fallback to time_created if no date found
+                return blob.time_created.strftime('%Y%m%d%H%M%S')
+            
+            # Sort by date in filename (most recent first)
+            matching_files.sort(key=get_date_from_filename, reverse=True)
+            latest = matching_files[0]
             # Return just the filename
             filename = latest.name.split('/')[-1]
             return filename
@@ -160,7 +189,7 @@ def get_latest_silver_file(bucket, prefix: str, pattern: str) -> Optional[str]:
         return None
 
 
-@st.cache_data(ttl=86400)
+@st.cache_data(ttl=21600)  # 6 hours cache (21600 seconds)
 def load_silver_summary_from_gcs() -> pd.DataFrame:
     """Load daily song summary from GCS Silver Layer, or fallback to raw data."""
     client = _get_gcs_client()
@@ -357,7 +386,7 @@ def load_raw_summary_data(bucket) -> pd.DataFrame:
         return pd.DataFrame()
 
 
-@st.cache_data(ttl=86400)
+@st.cache_data(ttl=21600)  # 6 hours cache (21600 seconds)
 def load_silver_comments_from_gcs() -> pd.DataFrame:
     """Load comments from GCS Silver Layer (auto-detect latest file)."""
     client = _get_gcs_client()
@@ -400,7 +429,7 @@ def load_silver_comments_from_gcs() -> pd.DataFrame:
         return pd.DataFrame()
 
 
-@st.cache_data(ttl=86400)
+@st.cache_data(ttl=21600)  # 6 hours cache (21600 seconds)
 def load_topic_model_data_from_gcs() -> pd.DataFrame:
     """Load topic model data from GCS Silver Layer (auto-detect latest file)."""
     client = _get_gcs_client()
@@ -1850,34 +1879,50 @@ def render_llm_summary(comments_df: pd.DataFrame, topic_df: pd.DataFrame, filter
                         # Try to list all available secrets
                         if hasattr(st.secrets, 'keys'):
                             secrets_keys = list(st.secrets.keys())
-                            st.write(f"Available secrets keys: {secrets_keys}")
-                        elif hasattr(st.secrets, '__dict__'):
-                            st.write(f"Secrets attributes: {list(st.secrets.__dict__.keys())}")
+                            st.write(f"Available sections: {secrets_keys}")
+                            st.caption("(Note: This only shows sections like [gcp_service_account], not top-level keys)")
                         
-                        # Try to get hf_token directly
+                        st.write("**Testing hf_token access:**")
+                        
+                        # Test 1: Section access (st.secrets.tokens.hf_token) - recommended
                         try:
-                            test_token = getattr(st.secrets, 'hf_token', None)
-                            if test_token:
-                                st.success(f"✅ Token found via getattr: {test_token[:15]}...")
+                            if hasattr(st.secrets, 'tokens'):
+                                test_token = st.secrets.tokens.hf_token
+                                if test_token:
+                                    st.success(f"✅ Found via st.secrets.tokens.hf_token: {test_token[:20]}...")
+                                else:
+                                    st.warning("⚠️ st.secrets.tokens.hf_token exists but is empty")
                             else:
-                                st.warning("❌ Token not found via getattr")
+                                st.warning("⚠️ st.secrets.tokens section does not exist")
+                        except AttributeError:
+                            st.error("❌ st.secrets.tokens.hf_token does not exist (AttributeError)")
                         except Exception as e:
-                            st.error(f"Error accessing hf_token: {e}")
+                            st.error(f"❌ Error accessing st.secrets.tokens.hf_token: {type(e).__name__}: {e}")
+                        
+                        # Test 2: Direct attribute access (legacy - top-level key)
+                        try:
+                            test_token = st.secrets.hf_token
+                            if test_token:
+                                st.success(f"✅ Found via st.secrets.hf_token: {test_token[:20]}...")
+                        except AttributeError:
+                            st.info("ℹ️ st.secrets.hf_token does not exist (using section format)")
+                        except Exception as e:
+                            st.error(f"❌ Error accessing st.secrets.hf_token: {type(e).__name__}: {e}")
                     except Exception as e:
                         st.write(f"Cannot list secrets: {e}")
                 
                 env_token = os.getenv('HF_TOKEN')
                 if env_token:
-                    st.write(f"✅ HF_TOKEN env var found: {env_token[:15]}...")
+                    st.write(f"✅ HF_TOKEN env var found: {env_token[:20]}...")
                 else:
-                    st.write("❌ HF_TOKEN env var not set")
+                    st.info("ℹ️ HF_TOKEN env var not set (this is normal for Streamlit Cloud)")
                 
                 # Show what get_hf_token() actually returns
                 actual_token = get_hf_token()
                 if actual_token:
-                    st.success(f"✅ get_hf_token() returned: {actual_token[:15]}...")
+                    st.success(f"✅✅ get_hf_token() SUCCESS: {actual_token[:20]}...")
                 else:
-                    st.error("❌ get_hf_token() returned None")
+                    st.error("❌❌ get_hf_token() returned None - token not accessible")
         
         if OPENAI_AVAILABLE:
             st.success("✅ OpenAI Available")
