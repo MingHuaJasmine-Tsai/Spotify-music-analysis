@@ -2021,17 +2021,21 @@ def generate_llm_summary(comments_df: pd.DataFrame, summary_df: pd.DataFrame, us
                 return f"## Overall Sentiment & Key Themes (Hugging Face BART)\n\n{bullets}"
         except Exception as e:
             error_msg = str(e)
-            # Don't show error here - let the caller handle it
-            # Return error message instead of raising
-            if "timeout" in error_msg.lower() or "timed out" in error_msg.lower():
-                return f"❌ Summary generation timed out. The API may be slow. Please try again or use OpenAI instead.\n\nError: {error_msg}"
-            elif "API error" in error_msg or "status_code" in error_msg:
-                return f"❌ Hugging Face API error. Please check your token has 'Read' access.\n\nError: {error_msg}"
+            # If HF fails and OpenAI is available, try OpenAI instead
+            if OPENAI_AVAILABLE:
+                # Continue to OpenAI fallback below
+                pass
             else:
-                return f"❌ Hugging Face summarization failed: {error_msg}\n\nPlease try again or switch to OpenAI."
+                # No OpenAI available, return error message
+                if "timeout" in error_msg.lower() or "timed out" in error_msg.lower():
+                    return f"❌ Summary generation timed out. The API may be slow. Please try again.\n\nError: {error_msg}"
+                elif "API error" in error_msg or "status_code" in error_msg:
+                    return f"❌ Hugging Face API error. Please check your token has 'Read' access.\n\nError: {error_msg}"
+                else:
+                    return f"❌ Hugging Face summarization failed: {error_msg}\n\nPlease try again."
     
-    # Try OpenAI if available and HF not used or failed
-    if OPENAI_AVAILABLE and not use_hf:
+    # Try OpenAI if available and (HF not used or HF failed)
+    if OPENAI_AVAILABLE and (not use_hf or (use_hf and not is_hf_available())):
         try:
             api_key = os.getenv("OPENAI_API_KEY") or (st.secrets.get("openai_api_key") if hasattr(st, 'secrets') else None)
             if not api_key:
