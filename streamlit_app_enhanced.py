@@ -936,31 +936,30 @@ def render_daily_snapshot(filtered_df: pd.DataFrame, summary_df: pd.DataFrame) -
                 # Only show if we have at least some data
                 artist_colors = get_artist_colors(top_sentiment["artist"].tolist())
                 if len(top_sentiment) > 0 and top_sentiment["youtube_pos_ratio"].sum() > 0:
-                        fig = go.Figure(data=[
-                            go.Bar(
-                                x=top_sentiment["youtube_pos_ratio"],
-                                y=top_sentiment["artist"],
-                                orientation='h',
-                                marker_color=[artist_colors.get(artist, "#1DB954") for artist in top_sentiment["artist"]],
-                                text=[f"{v:.2%}" for v in top_sentiment["youtube_pos_ratio"]],
-                                textposition="outside"
-                            )
-                        ])
-                        max_val = max(0.1, top_sentiment["youtube_pos_ratio"].max() * 1.1)
-                        fig.update_layout(
-                            title="Top 10 by Sentiment",
-                            xaxis_title="Positive Ratio",
-                            yaxis_title="Artist",
-                            height=300,
-                            template="plotly_dark",
-                            xaxis=dict(range=[0, max_val])
+                    fig = go.Figure(data=[
+                        go.Bar(
+                            x=top_sentiment["youtube_pos_ratio"],
+                            y=top_sentiment["artist"],
+                            orientation='h',
+                            marker_color=[artist_colors.get(artist, "#1DB954") for artist in top_sentiment["artist"]],
+                            text=[f"{v:.2%}" for v in top_sentiment["youtube_pos_ratio"]],
+                            textposition="outside"
                         )
-                        fig.update_xaxes(tickformat=".0%")
-                        st.plotly_chart(fig, use_container_width=True)
-                    else:
-                        # Show all artists even if values are 0
-                        top_sentiment = sentiment_data.nlargest(10, "youtube_pos_ratio")
-                        if len(top_sentiment) > 0:
+                    ])
+                    max_val = max(0.1, top_sentiment["youtube_pos_ratio"].max() * 1.1)
+                    fig.update_layout(
+                        title="Top 10 by Sentiment",
+                        xaxis_title="Positive Ratio",
+                        yaxis_title="Artist",
+                        height=300,
+                        template="plotly_dark",
+                        xaxis=dict(range=[0, max_val])
+                    )
+                    fig.update_xaxes(tickformat=".0%")
+                    st.plotly_chart(fig, use_container_width=True)
+                else:
+                    # Show all artists even if values are 0
+                    if len(top_sentiment) > 0:
                             fig = go.Figure(data=[
                                 go.Bar(
                                     x=top_sentiment["youtube_pos_ratio"],
