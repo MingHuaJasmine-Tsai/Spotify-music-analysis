@@ -2844,11 +2844,23 @@ def main() -> None:
         # For display purposes, use filtered data
         filtered_df = artist_filtered_df.copy()
     
-    if date_range and len(date_range) == 2:
-        filtered_df = filtered_df[
-            (filtered_df["snapshot_date"] >= pd.Timestamp(date_range[0])) &
-            (filtered_df["snapshot_date"] <= pd.Timestamp(date_range[1]))
-        ]
+    # Handle date_range: it can be None, a single date, or a tuple of 2 dates
+    if date_range is not None:
+        try:
+            # Check if date_range is iterable (tuple/list) with 2 elements
+            if hasattr(date_range, '__len__') and len(date_range) == 2:
+                filtered_df = filtered_df[
+                    (filtered_df["snapshot_date"] >= pd.Timestamp(date_range[0])) &
+                    (filtered_df["snapshot_date"] <= pd.Timestamp(date_range[1]))
+                ]
+            elif isinstance(date_range, (date, pd.Timestamp)):
+                # Single date selected - filter to that date only
+                filtered_df = filtered_df[
+                    filtered_df["snapshot_date"] == pd.Timestamp(date_range)
+                ]
+        except (TypeError, AttributeError, IndexError) as e:
+            # If date_range format is unexpected, skip date filtering
+            st.sidebar.warning(f"⚠️ Date filter format issue: {e}")
     
     if filtered_df.empty:
         st.warning("⚠️ No data matches the selected filters")
