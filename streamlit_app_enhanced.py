@@ -653,7 +653,11 @@ def render_daily_snapshot(filtered_df: pd.DataFrame, summary_df: pd.DataFrame) -
         
         with col1:
             st.markdown("**Top Artists by Views**")
-            top_views = filtered_df.nlargest(10, "youtube_views")[["artist", "youtube_views"]]
+            # Aggregate by artist first to avoid duplicates (sum views if multiple songs)
+            artist_views = filtered_df.groupby("artist", as_index=False).agg({
+                "youtube_views": "sum"
+            }).sort_values("youtube_views", ascending=False)
+            top_views = artist_views.head(10)[["artist", "youtube_views"]]
             artist_colors = get_artist_colors(top_views["artist"].tolist())
             fig = go.Figure(data=[
                 go.Bar(
@@ -678,7 +682,11 @@ def render_daily_snapshot(filtered_df: pd.DataFrame, summary_df: pd.DataFrame) -
         
         with col2:
             st.markdown("**Top Artists by Likes**")
-            top_likes = filtered_df.nlargest(10, "youtube_likes")[["artist", "youtube_likes"]]
+            # Aggregate by artist first to avoid duplicates (sum likes if multiple songs)
+            artist_likes = filtered_df.groupby("artist", as_index=False).agg({
+                "youtube_likes": "sum"
+            }).sort_values("youtube_likes", ascending=False)
+            top_likes = artist_likes.head(10)[["artist", "youtube_likes"]]
             artist_colors = get_artist_colors(top_likes["artist"].tolist())
             fig = go.Figure(data=[
                 go.Bar(
@@ -702,7 +710,24 @@ def render_daily_snapshot(filtered_df: pd.DataFrame, summary_df: pd.DataFrame) -
         
         with col3:
             st.markdown("**Top Artists by Sentiment**")
-            top_sentiment = filtered_df.nlargest(10, "youtube_pos_ratio")[["artist", "youtube_pos_ratio"]]
+            # Aggregate by artist first to avoid duplicates (weighted average for sentiment)
+            # Calculate weighted average: sum(pos_comments) / sum(total_comments)
+            if "pos_comments" in filtered_df.columns and "youtube_comment_count" in filtered_df.columns:
+                artist_sentiment = filtered_df.groupby("artist", as_index=False).agg({
+                    "pos_comments": "sum",
+                    "youtube_comment_count": "sum"
+                })
+                artist_sentiment["youtube_pos_ratio"] = (
+                    artist_sentiment["pos_comments"] / 
+                    artist_sentiment["youtube_comment_count"].replace(0, 1)
+                ).fillna(0)
+            else:
+                # Fallback to mean if pos_comments not available
+                artist_sentiment = filtered_df.groupby("artist", as_index=False).agg({
+                    "youtube_pos_ratio": "mean"
+                })
+            artist_sentiment = artist_sentiment.sort_values("youtube_pos_ratio", ascending=False)
+            top_sentiment = artist_sentiment.head(10)[["artist", "youtube_pos_ratio"]]
             artist_colors = get_artist_colors(top_sentiment["artist"].tolist())
             fig = go.Figure(data=[
                 go.Bar(
@@ -724,8 +749,27 @@ def render_daily_snapshot(filtered_df: pd.DataFrame, summary_df: pd.DataFrame) -
             fig.update_xaxes(tickformat=".0%")
             st.plotly_chart(fig, use_container_width=True)
         
-        # Scatter plots
-        st.subheader("📊 Metrics Comparison")
+        # Scatter plots - Top 10 artists only
+        st.subheader("📊 Metrics Comparison (Top 10 Artists)")
+        
+        # Aggregate by artist first
+        artist_agg = filtered_df.groupby("artist", as_index=False).agg({
+            "youtube_views": "sum",
+            "youtube_likes": "sum",
+            "youtube_comment_count": "sum",
+            "pos_comments": "sum" if "pos_comments" in filtered_df.columns else "first"
+        })
+        # Calculate weighted sentiment
+        if "pos_comments" in artist_agg.columns:
+            artist_agg["youtube_pos_ratio"] = (
+                artist_agg["pos_comments"] / 
+                artist_agg["youtube_comment_count"].replace(0, 1)
+            ).fillna(0)
+        else:
+            artist_agg["youtube_pos_ratio"] = 0
+        
+        # Get top 10 by views
+        top_10_artists = artist_agg.nlargest(10, "youtube_views")
         
         col1, col2 = st.columns(2)
         
@@ -733,14 +777,14 @@ def render_daily_snapshot(filtered_df: pd.DataFrame, summary_df: pd.DataFrame) -
             # Use better color scale for dark mode
             fig = go.Figure(data=[
                 go.Scatter(
-                    x=filtered_df["youtube_views"],
-                    y=filtered_df["youtube_likes"],
+                    x=top_10_artists["youtube_views"],
+                    y=top_10_artists["youtube_likes"],
                     mode='markers+text',
-                    text=filtered_df["artist"],
+                    text=top_10_artists["artist"],
                     textposition="top center",
                     marker=dict(
                         size=12,
-                        color=filtered_df["youtube_pos_ratio"],
+                        color=top_10_artists["youtube_pos_ratio"],
                         colorscale="Plasma",  # Better for dark mode than Viridis
                         showscale=True,
                         colorbar=dict(title="Sentiment", tickformat=".0%"),
@@ -749,7 +793,7 @@ def render_daily_snapshot(filtered_df: pd.DataFrame, summary_df: pd.DataFrame) -
                 )
             ])
             fig.update_layout(
-                title="Views vs Likes (colored by Sentiment)",
+                title="Top 10: Views vs Likes (colored by Sentiment)",
                 xaxis_title="YouTube Views",
                 yaxis_title="YouTube Likes",
                 height=400,
@@ -761,17 +805,17 @@ def render_daily_snapshot(filtered_df: pd.DataFrame, summary_df: pd.DataFrame) -
         
         with col2:
             # Use artist colors for better distinction
-            artist_colors = get_artist_colors(filtered_df["artist"].unique().tolist())
+            artist_colors = get_artist_colors(top_10_artists["artist"].tolist())
             fig = go.Figure(data=[
                 go.Scatter(
-                    x=filtered_df["youtube_views"],
-                    y=filtered_df["youtube_pos_ratio"],
+                    x=top_10_artists["youtube_views"],
+                    y=top_10_artists["youtube_pos_ratio"],
                     mode='markers+text',
-                    text=filtered_df["artist"],
+                    text=top_10_artists["artist"],
                     textposition="top center",
                     marker=dict(
                         size=12,
-                        color=[artist_colors.get(artist, "#1DB954") for artist in filtered_df["artist"]],
+                        color=[artist_colors.get(artist, "#1DB954") for artist in top_10_artists["artist"]],
                         line=dict(width=1, color="white")
                     )
                 )
@@ -812,7 +856,11 @@ def render_daily_snapshot(filtered_df: pd.DataFrame, summary_df: pd.DataFrame) -
             
             with col1:
                 st.markdown("**Top by Views**")
-                top_views = latest_data.nlargest(10, "youtube_views")[["artist", "youtube_views"]]
+                # Aggregate by artist first
+                artist_views = latest_data.groupby("artist", as_index=False).agg({
+                    "youtube_views": "sum"
+                }).sort_values("youtube_views", ascending=False)
+                top_views = artist_views.head(10)[["artist", "youtube_views"]]
                 artist_colors = get_artist_colors(top_views["artist"].tolist())
                 fig = go.Figure(data=[
                     go.Bar(
@@ -836,7 +884,11 @@ def render_daily_snapshot(filtered_df: pd.DataFrame, summary_df: pd.DataFrame) -
             
             with col2:
                 st.markdown("**Top by Likes**")
-                top_likes = latest_data.nlargest(10, "youtube_likes")[["artist", "youtube_likes"]]
+                # Aggregate by artist first
+                artist_likes = latest_data.groupby("artist", as_index=False).agg({
+                    "youtube_likes": "sum"
+                }).sort_values("youtube_likes", ascending=False)
+                top_likes = artist_likes.head(10)[["artist", "youtube_likes"]]
                 artist_colors = get_artist_colors(top_likes["artist"].tolist())
                 fig = go.Figure(data=[
                     go.Bar(
@@ -860,14 +912,26 @@ def render_daily_snapshot(filtered_df: pd.DataFrame, summary_df: pd.DataFrame) -
             
             with col3:
                 st.markdown("**Top by Sentiment**")
-                # Check if sentiment column exists and has data
-                if "youtube_pos_ratio" in latest_data.columns:
-                    # Fill NaN with 0 and ensure numeric
-                    sentiment_data = latest_data[["artist", "youtube_pos_ratio"]].copy()
-                    sentiment_data["youtube_pos_ratio"] = pd.to_numeric(sentiment_data["youtube_pos_ratio"], errors="coerce").fillna(0)
-                    
-                    # Get top 10 (including zeros if needed)
-                    top_sentiment = sentiment_data.nlargest(10, "youtube_pos_ratio")
+                # Aggregate by artist first (weighted average for sentiment)
+                if "pos_comments" in latest_data.columns and "youtube_comment_count" in latest_data.columns:
+                    artist_sentiment = latest_data.groupby("artist", as_index=False).agg({
+                        "pos_comments": "sum",
+                        "youtube_comment_count": "sum"
+                    })
+                    artist_sentiment["youtube_pos_ratio"] = (
+                        artist_sentiment["pos_comments"] / 
+                        artist_sentiment["youtube_comment_count"].replace(0, 1)
+                    ).fillna(0)
+                elif "youtube_pos_ratio" in latest_data.columns:
+                    artist_sentiment = latest_data.groupby("artist", as_index=False).agg({
+                        "youtube_pos_ratio": "mean"
+                    })
+                    artist_sentiment["youtube_pos_ratio"] = pd.to_numeric(artist_sentiment["youtube_pos_ratio"], errors="coerce").fillna(0)
+                else:
+                    artist_sentiment = pd.DataFrame(columns=["artist", "youtube_pos_ratio"])
+                
+                artist_sentiment = artist_sentiment.sort_values("youtube_pos_ratio", ascending=False)
+                top_sentiment = artist_sentiment.head(10)[["artist", "youtube_pos_ratio"]]
                     
                     # Only show if we have at least some data
                     artist_colors = get_artist_colors(top_sentiment["artist"].tolist())
