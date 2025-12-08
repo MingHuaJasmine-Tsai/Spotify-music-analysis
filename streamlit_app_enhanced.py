@@ -1941,32 +1941,36 @@ def hf_summarize(text: str) -> str:
         },
     }
     
-    # Try standard endpoint first
+    # Try multiple endpoints with correct formats
     api_urls = [
         f"https://api-inference.huggingface.co/models/{HF_MODEL}",
-        f"https://router.huggingface.co/inference/{HF_MODEL}",
+        f"https://router.huggingface.co/hf-inference/models/{HF_MODEL}",
+        f"https://api-inference.huggingface.co/pipeline/summarization/{HF_MODEL}",
     ]
     
     last_error = None
+    errors = []
     for api_url in api_urls:
         try:
             response = requests.post(api_url, headers=headers, json=payload, timeout=120)
             
             if response.status_code == 401:
-                raise RuntimeError(f"Hugging Face API authentication failed (401). Please check your token is valid and has 'Read' access.")
+                errors.append(f"Endpoint {api_url}: Authentication failed (401)")
+                continue
             elif response.status_code == 403:
-                raise RuntimeError(f"Hugging Face API access forbidden (403). Token may not have permission to access this model.")
+                errors.append(f"Endpoint {api_url}: Access forbidden (403)")
+                continue
             elif response.status_code == 404:
                 # Try next endpoint if 404
-                last_error = f"Hugging Face API endpoint not found (404): {api_url}"
+                errors.append(f"Endpoint {api_url}: Not found (404)")
                 continue
             elif response.status_code == 410:
                 # Try next endpoint if deprecated
-                last_error = f"Hugging Face API endpoint deprecated (410): {api_url}"
+                errors.append(f"Endpoint {api_url}: Deprecated (410)")
                 continue
             elif response.status_code != 200:
                 error_text = response.text[:500] if len(response.text) > 500 else response.text
-                last_error = f"Hugging Face API error ({response.status_code}): {error_text}"
+                errors.append(f"Endpoint {api_url}: Error ({response.status_code}): {error_text}")
                 continue
             
             data = response.json()
@@ -1989,9 +1993,10 @@ def hf_summarize(text: str) -> str:
             last_error = f"Failed to connect to Hugging Face API: {e}"
             continue
     
-    # If all endpoints failed, raise the last error
-    if last_error:
-        raise RuntimeError(last_error)
+    # If all endpoints failed, raise a comprehensive error
+    if errors:
+        error_msg = "All Hugging Face API endpoints failed:\n" + "\n".join(f"  - {e}" for e in errors)
+        raise RuntimeError(error_msg)
     else:
         raise RuntimeError("All Hugging Face API endpoints failed.")
 
