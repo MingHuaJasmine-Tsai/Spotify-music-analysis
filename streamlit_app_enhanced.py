@@ -1233,57 +1233,81 @@ def render_youtube_trends(filtered_df: pd.DataFrame, summary_df: pd.DataFrame) -
 
 
 def render_reddit_analysis(summary_df: pd.DataFrame) -> None:
-    """Render Reddit analysis - independent module."""
+    """Render Reddit analysis - use Silver Layer data first, fallback to independent Reddit file."""
     st.header("💬 Reddit Analysis")
     
-    # Load Reddit data
-    client = _get_gcs_client()
-    if client is None:
-        st.warning("⚠️ Cannot load Reddit data - GCS connection failed")
-        return
+    # Prefer Silver Layer data (summary_df with reddit_comment_count)
+    # This has the latest data and all dates (up to 2025-12-06)
+    if not summary_df.empty and "reddit_comment_count" in summary_df.columns:
+        # Use Silver Layer data
+        reddit_df = summary_df[summary_df["reddit_comment_count"] > 0].copy()
+        
+        if not reddit_df.empty:
+            # Rename columns for compatibility
+            if "reddit_comment_count" in reddit_df.columns:
+                reddit_df["num_comments"] = reddit_df["reddit_comment_count"]
+            
+            st.info("ℹ️ Using Reddit data from Silver Layer (latest data up to 2025-12-06)")
+        else:
+            reddit_df = pd.DataFrame()
+    else:
+        reddit_df = pd.DataFrame()
     
-    try:
-        bucket = client.bucket(BUCKET_NAME)
-        reddit_blob = bucket.blob("reddit/summary/summary_all.csv")
-        
-        if not reddit_blob.exists():
-            st.warning("⚠️ Reddit data file not found")
+    # Fallback to independent Reddit file if Silver Layer has no Reddit data
+    if reddit_df.empty:
+        client = _get_gcs_client()
+        if client is None:
+            st.warning("⚠️ Cannot load Reddit data - GCS connection failed")
             return
         
-        content = reddit_blob.download_as_text()
-        reddit_df = pd.read_csv(io.StringIO(content))
-        
-        if reddit_df.empty:
-            st.warning("⚠️ Reddit data is empty")
-            return
-        
-        # Fix missing artist/song data - use artist_x/song_x or artist_y/song_y if artist/song is NaN
-        if "artist" in reddit_df.columns:
-            # Fill NaN artist from artist_x or artist_y
-            if "artist_x" in reddit_df.columns:
-                reddit_df["artist"] = reddit_df["artist"].fillna(reddit_df["artist_x"])
-            if "artist_y" in reddit_df.columns:
-                reddit_df["artist"] = reddit_df["artist"].fillna(reddit_df["artist_y"])
-        
-        if "song" in reddit_df.columns:
-            # Fill NaN song from song_x or song_y
-            if "song_x" in reddit_df.columns:
-                reddit_df["song"] = reddit_df["song"].fillna(reddit_df["song_x"])
-            if "song_y" in reddit_df.columns:
-                reddit_df["song"] = reddit_df["song"].fillna(reddit_df["song_y"])
-        
-        # Process Reddit data
-        if "created_utc" in reddit_df.columns:
-            reddit_df["created_utc"] = pd.to_datetime(reddit_df["created_utc"], errors="coerce")
-            reddit_df["date"] = reddit_df["created_utc"].dt.date
-            reddit_df["snapshot_date"] = pd.to_datetime(reddit_df["date"])
-        
-        # Filter out rows without artist (after filling)
-        if "artist" in reddit_df.columns:
-            reddit_df = reddit_df[reddit_df["artist"].notna()]
-        
-        if reddit_df.empty:
-            st.warning("⚠️ No Reddit data with valid artist information")
+        try:
+            bucket = client.bucket(BUCKET_NAME)
+            reddit_blob = bucket.blob("reddit/summary/summary_all.csv")
+            
+            if not reddit_blob.exists():
+                st.warning("⚠️ Reddit data file not found in either Silver Layer or independent file")
+                return
+            
+            content = reddit_blob.download_as_text()
+            reddit_df = pd.read_csv(io.StringIO(content))
+            
+            if reddit_df.empty:
+                st.warning("⚠️ Reddit data is empty")
+                return
+            
+            # Fix missing artist/song data - use artist_x/song_x or artist_y/song_y if artist/song is NaN
+            if "artist" in reddit_df.columns:
+                # Fill NaN artist from artist_x or artist_y
+                if "artist_x" in reddit_df.columns:
+                    reddit_df["artist"] = reddit_df["artist"].fillna(reddit_df["artist_x"])
+                if "artist_y" in reddit_df.columns:
+                    reddit_df["artist"] = reddit_df["artist"].fillna(reddit_df["artist_y"])
+            
+            if "song" in reddit_df.columns:
+                # Fill NaN song from song_x or song_y
+                if "song_x" in reddit_df.columns:
+                    reddit_df["song"] = reddit_df["song"].fillna(reddit_df["song_x"])
+                if "song_y" in reddit_df.columns:
+                    reddit_df["song"] = reddit_df["song"].fillna(reddit_df["song_y"])
+            
+            # Process Reddit data
+            if "created_utc" in reddit_df.columns:
+                reddit_df["created_utc"] = pd.to_datetime(reddit_df["created_utc"], errors="coerce")
+                reddit_df["date"] = reddit_df["created_utc"].dt.date
+                reddit_df["snapshot_date"] = pd.to_datetime(reddit_df["date"])
+            
+            # Filter out rows without artist (after filling)
+            if "artist" in reddit_df.columns:
+                reddit_df = reddit_df[reddit_df["artist"].notna()]
+            
+            if reddit_df.empty:
+                st.warning("⚠️ No Reddit data with valid artist information")
+                return
+            
+            st.info("ℹ️ Using Reddit data from independent file (fallback - may have older date range)")
+            
+        except Exception as e:
+            st.error(f"❌ Error loading Reddit data: {e}")
             return
         
         # Reddit data overview
