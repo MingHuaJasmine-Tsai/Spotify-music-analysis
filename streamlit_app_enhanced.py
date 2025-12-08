@@ -1847,10 +1847,37 @@ def render_llm_summary(comments_df: pd.DataFrame, topic_df: pd.DataFrame, filter
                 st.write(f"Has st.secrets: {hasattr(st, 'secrets')}")
                 if hasattr(st, 'secrets'):
                     try:
-                        st.write(f"Secrets keys: {list(st.secrets.keys())}")
-                    except:
-                        st.write("Cannot list secrets keys")
-                st.write(f"HF_TOKEN env var: {os.getenv('HF_TOKEN') is not None}")
+                        # Try to list all available secrets
+                        if hasattr(st.secrets, 'keys'):
+                            secrets_keys = list(st.secrets.keys())
+                            st.write(f"Available secrets keys: {secrets_keys}")
+                        elif hasattr(st.secrets, '__dict__'):
+                            st.write(f"Secrets attributes: {list(st.secrets.__dict__.keys())}")
+                        
+                        # Try to get hf_token directly
+                        try:
+                            test_token = getattr(st.secrets, 'hf_token', None)
+                            if test_token:
+                                st.success(f"✅ Token found via getattr: {test_token[:15]}...")
+                            else:
+                                st.warning("❌ Token not found via getattr")
+                        except Exception as e:
+                            st.error(f"Error accessing hf_token: {e}")
+                    except Exception as e:
+                        st.write(f"Cannot list secrets: {e}")
+                
+                env_token = os.getenv('HF_TOKEN')
+                if env_token:
+                    st.write(f"✅ HF_TOKEN env var found: {env_token[:15]}...")
+                else:
+                    st.write("❌ HF_TOKEN env var not set")
+                
+                # Show what get_hf_token() actually returns
+                actual_token = get_hf_token()
+                if actual_token:
+                    st.success(f"✅ get_hf_token() returned: {actual_token[:15]}...")
+                else:
+                    st.error("❌ get_hf_token() returned None")
         
         if OPENAI_AVAILABLE:
             st.success("✅ OpenAI Available")
