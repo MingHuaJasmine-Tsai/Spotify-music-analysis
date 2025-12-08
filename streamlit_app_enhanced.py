@@ -1024,21 +1024,44 @@ def render_reddit_analysis(summary_df: pd.DataFrame) -> None:
             st.warning("⚠️ Reddit data is empty")
             return
         
+        # Fix missing artist/song data - use artist_x/song_x or artist_y/song_y if artist/song is NaN
+        if "artist" in reddit_df.columns:
+            # Fill NaN artist from artist_x or artist_y
+            if "artist_x" in reddit_df.columns:
+                reddit_df["artist"] = reddit_df["artist"].fillna(reddit_df["artist_x"])
+            if "artist_y" in reddit_df.columns:
+                reddit_df["artist"] = reddit_df["artist"].fillna(reddit_df["artist_y"])
+        
+        if "song" in reddit_df.columns:
+            # Fill NaN song from song_x or song_y
+            if "song_x" in reddit_df.columns:
+                reddit_df["song"] = reddit_df["song"].fillna(reddit_df["song_x"])
+            if "song_y" in reddit_df.columns:
+                reddit_df["song"] = reddit_df["song"].fillna(reddit_df["song_y"])
+        
         # Process Reddit data
         if "created_utc" in reddit_df.columns:
             reddit_df["created_utc"] = pd.to_datetime(reddit_df["created_utc"], errors="coerce")
             reddit_df["date"] = reddit_df["created_utc"].dt.date
             reddit_df["snapshot_date"] = pd.to_datetime(reddit_df["date"])
         
-        # Important notice
-        # Reddit data is limited - silently handle
+        # Filter out rows without artist (after filling)
+        if "artist" in reddit_df.columns:
+            reddit_df = reddit_df[reddit_df["artist"].notna()]
+        
+        if reddit_df.empty:
+            st.warning("⚠️ No Reddit data with valid artist information")
+            return
         
         # Reddit data overview
         st.subheader("📊 Reddit Data Overview")
         
         if "artist" in reddit_df.columns:
             reddit_artists = reddit_df["artist"].dropna().unique()
-            st.write(f"**Artists with Reddit data**: {', '.join(reddit_artists)}")
+            if len(reddit_artists) > 0:
+                st.write(f"**Artists with Reddit data**: {', '.join(reddit_artists)}")
+            else:
+                st.warning("⚠️ No artists found in Reddit data")
         
         if "num_comments" in reddit_df.columns:
             total_comments = reddit_df["num_comments"].sum()
