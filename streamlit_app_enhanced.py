@@ -1312,33 +1312,84 @@ def render_reddit_analysis(summary_df: pd.DataFrame) -> None:
             reddit_daily["snapshot_date"] = pd.to_datetime(reddit_daily["snapshot_date"])
             reddit_daily = reddit_daily.sort_values("snapshot_date")
             
-            # Get top 10 artists by total comments
+            # Get top artists by total comments (up to 10, but show all if fewer)
             artist_totals = reddit_daily.groupby("artist")["num_comments"].sum().sort_values(ascending=False)
-            top_10_artists = artist_totals.head(10).index.tolist()
+            
+            # Get all artists with Reddit data (not just top 10, but limit to top 10 for readability)
+            artists_with_data = artist_totals[artist_totals > 0].index.tolist()
+            top_artists = artists_with_data[:10]  # Take up to 10
+            
+            if len(top_artists) == 0:
+                st.warning("⚠️ No artists have Reddit comment data")
+                return
+            
+            # Show info about how many artists are displayed
+            if len(artists_with_data) > 10:
+                st.caption(f"Showing top 10 of {len(artists_with_data)} artists with Reddit data")
+            elif len(artists_with_data) < 10:
+                st.caption(f"Showing {len(artists_with_data)} artist(s) with Reddit data (fewer than 10 have data)")
+            
+            # Use distinct colors for each artist
+            colors = px.colors.qualitative.Set3[:len(top_artists)]
+            if len(top_artists) > 10:
+                # Use Plotly default colors for more than 10
+                colors = px.colors.qualitative.Plotly * ((len(top_artists) // 10) + 1)
             
             fig = go.Figure()
-            for artist in top_10_artists:
+            for idx, artist in enumerate(top_artists):
                 artist_data = reddit_daily[reddit_daily["artist"] == artist]
-                fig.add_trace(go.Scatter(
-                    x=artist_data["snapshot_date"],
-                    y=artist_data["num_comments"],
-                    name=artist,
-                    mode="lines+markers"
-                ))
+                if not artist_data.empty:
+                    fig.add_trace(go.Scatter(
+                        x=artist_data["snapshot_date"],
+                        y=artist_data["num_comments"],
+                        name=artist,
+                        mode="lines+markers",
+                        line=dict(color=colors[idx % len(colors)], width=2),
+                        marker=dict(size=6)
+                    ))
+            
+            # Get date range for subtitle
+            if not reddit_daily.empty:
+                date_range_str = f"from {reddit_daily['snapshot_date'].min().date()} to {reddit_daily['snapshot_date'].max().date()}"
+            else:
+                date_range_str = ""
             
             fig.update_layout(
-                title="Reddit Comments Over Time (Top 10 Artists)",
+                title=f"Reddit Comments Over Time (Top {len(top_artists)} Artists)",
                 xaxis_title="Date",
                 yaxis_title="Number of Comments",
-                height=400,
+                height=500,
                 template="plotly_dark",
+                hovermode='x unified',
                 xaxis=dict(
                     type='date',
-                    tickformat='%Y-%m-%d'
-                )
+                    tickformat='%Y-%m-%d',
+                    tickangle=-45
+                ),
+                yaxis=dict(
+                    tickformat=',.0f'
+                ),
+                legend=dict(
+                    yanchor="top",
+                    y=0.99,
+                    xanchor="left",
+                    x=1.01
+                ),
+                margin=dict(r=150)  # Add right margin for legend
             )
             
             st.plotly_chart(fig, use_container_width=True)
+            
+            # Show summary stats
+            col1, col2, col3 = st.columns(3)
+            with col1:
+                st.metric("Artists with Data", len(artists_with_data))
+            with col2:
+                if not reddit_daily.empty:
+                    st.metric("Date Range", f"{reddit_daily['snapshot_date'].nunique()} days")
+            with col3:
+                total_reddit = artist_totals.sum()
+                st.metric("Total Comments", f"{total_reddit:,.0f}")
         
         # Reddit data table
         st.subheader("📋 Reddit Data Table")
