@@ -2099,7 +2099,7 @@ def generate_llm_summary(comments_df: pd.DataFrame, summary_df: pd.DataFrame, us
     return summary
 
 
-def render_llm_summary(comments_df: pd.DataFrame, topic_df: pd.DataFrame, filtered_df: pd.DataFrame) -> None:
+def render_llm_summary(comments_df: pd.DataFrame, filtered_df: pd.DataFrame) -> None:
     """Render LLM summary generation interface."""
     st.header("🤖 LLM Summary Generation")
     
@@ -2107,8 +2107,8 @@ def render_llm_summary(comments_df: pd.DataFrame, topic_df: pd.DataFrame, filter
         st.warning("No data available for summary generation")
         return
     
-    # Use topic_df if available for comments
-    analysis_comments = topic_df if not topic_df.empty else comments_df
+    # Use comments_df for analysis
+    analysis_comments = comments_df
     
     # API selection
     col1, col2, col3 = st.columns([2, 1, 1])
@@ -2860,10 +2860,10 @@ def main() -> None:
         render_radar_insights(summary_df)
     
     with tab5:
-        render_comments_analysis(comments_df, topic_df, filtered_df)
+        render_comments_analysis(comments_df, filtered_df)
     
     with tab6:
-        render_llm_summary(comments_df, topic_df, filtered_df)
+        render_llm_summary(comments_df, filtered_df)
 
 
 if __name__ == "__main__":
