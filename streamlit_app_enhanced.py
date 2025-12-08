@@ -2253,19 +2253,32 @@ def render_llm_summary(comments_df: pd.DataFrame, filtered_df: pd.DataFrame, sum
         }).reset_index().sort_values("snapshot_date")
         
         if len(all_daily) > 1:
-            first_views = all_daily["youtube_views"].iloc[0]
-            last_views = all_daily["youtube_views"].iloc[-1]
+            # Calculate cumulative views growth
+            # For YouTube, views are cumulative, so we should compare the latest total
+            first_views = float(all_daily["youtube_views"].iloc[0])
+            last_views = float(all_daily["youtube_views"].iloc[-1])
+            
+            # Debug: show the actual values
+            with st.expander("🔍 Growth Calculation Details", expanded=False):
+                st.write(f"**First date ({all_daily['snapshot_date'].iloc[0].date()}):** {first_views:,.0f} views")
+                st.write(f"**Last date ({all_daily['snapshot_date'].iloc[-1].date()}):** {last_views:,.0f} views")
+                st.write(f"**Difference:** {last_views - first_views:,.0f} views")
+                st.write(f"**Number of days:** {len(all_daily)}")
             
             if first_views > 0:
                 views_growth = ((last_views - first_views) / first_views) * 100
             else:
                 views_growth = 0.0
             
-            st.metric(
-                "Views Growth",
-                f"{views_growth:+.1f}%",
-                delta=f"From {all_daily['snapshot_date'].iloc[0].date()} to {all_daily['snapshot_date'].iloc[-1].date()}"
-            )
+            # Only show if there's meaningful growth
+            if abs(views_growth) < 0.01:
+                st.warning(f"⚠️ Views Growth: {views_growth:+.2f}% - Very minimal change detected. This might indicate data is cumulative (same total each day) rather than incremental.")
+            else:
+                st.metric(
+                    "Views Growth",
+                    f"{views_growth:+.1f}%",
+                    delta=f"From {all_daily['snapshot_date'].iloc[0].date()} to {all_daily['snapshot_date'].iloc[-1].date()}"
+                )
         elif len(all_daily) == 1:
             st.info("ℹ️ Only one day of data available. Growth calculation requires multiple days.")
         
